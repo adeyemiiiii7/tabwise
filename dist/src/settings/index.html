@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tabwise — Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="/settings.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-wMinxHhO.js">
+  <link rel="modulepreload" crossorigin href="/assets/ai-CWpBrlUE.js">
+  <link rel="modulepreload" crossorigin href="/assets/storage-DTlbCHCl.js">
+  <link rel="stylesheet" crossorigin href="/assets/settings-B99tsYZZ.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">TW<span class="dot">.</span></div>
+      <nav>
+        <a href="#ai" class="active">AI Provider</a>
+        <a href="#categories">Categories</a>
+        <a href="#behavior">Behavior</a>
+        <a href="#data">Data</a>
+        <a href="#" id="nav-stats" class="nav-stats">View Stats ↗</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header>
+        <h1>Settings</h1>
+        <button id="save-btn">Save changes</button>
+      </header>
+
+      <section id="ai">
+        <h2>AI Provider</h2>
+        <div class="provider-grid">
+          <label class="provider-card">
+            <input type="radio" name="provider" value="openai" />
+            <div class="card-inner">
+              <span class="provider-name">OpenAI</span>
+              <span class="provider-model">gpt-4o-mini</span>
+            </div>
+          </label>
+          <label class="provider-card">
+            <input type="radio" name="provider" value="claude" />
+            <div class="card-inner">
+              <span class="provider-name">Claude</span>
+              <span class="provider-model">claude-haiku</span>
+            </div>
+          </label>
+          <label class="provider-card">
+            <input type="radio" name="provider" value="gemini" />
+            <div class="card-inner">
+              <span class="provider-name">Gemini</span>
+              <span class="provider-model">gemini-1.5-flash</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="field">
+          <label>API Key</label>
+          <div class="input-row">
+            <input type="password" id="api-key" placeholder="Paste your API key here" />
+            <button id="test-btn">Test</button>
+          </div>
+          <p id="test-result" class="hint"></p>
+        </div>
+      </section>
+
+      <section id="categories">
+        <h2>Categories</h2>
+        <p class="section-hint">The AI uses these to organize your tabs. Rename or add your own.</p>
+        <div id="categories-list"></div>
+        <div class="add-category-row">
+          <input type="text" id="new-cat-name" placeholder="Category name" />
+          <input type="color" id="new-cat-color" value="#888888" title="Pick a color" />
+          <button id="add-cat-btn" class="secondary">+ Add</button>
+        </div>
+      </section>
+
+      <section id="behavior">
+        <h2>Behavior</h2>
+        <div class="toggle-row">
+          <div>
+            <strong>Auto mode</strong>
+            <p>Organize tabs automatically without asking</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="auto-mode" />
+            <span class="track"></span>
+          </label>
+        </div>
+        <div class="field">
+          <label>Inactivity threshold (hours)</label>
+          <input type="number" id="inactivity" min="1" max="168" value="24" />
+        </div>
+      </section>
+
+      <section id="data">
+        <h2>Data</h2>
+
+        <div class="data-block">
+          <div class="data-block-text">
+            <strong>Reset algorithm</strong>
+            <p>Clears all your saved site preferences. Tabwise will start asking where each site belongs again and rebuild from scratch. Your screen time history is kept.</p>
+          </div>
+          <button id="clear-cache-btn" class="secondary">Reset algorithm</button>
+        </div>
+
+        <div class="data-block">
+          <div class="data-block-text">
+            <strong>Export screen time</strong>
+            <p>Download your full screen time history as a CSV file.</p>
+          </div>
+          <button id="export-btn" class="secondary">Export CSV</button>
+        </div>
+
+        <div class="data-block danger-block">
+          <div class="data-block-text">
+            <strong>Wipe all data</strong>
+            <p>Permanently deletes everything — screen time, settings, algorithm data. Cannot be undone.</p>
+          </div>
+          <button id="reset-btn" class="danger">Wipe all</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+</body>
+</html>

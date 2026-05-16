@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome to Tabwise</title>
+  <script type="module" crossorigin src="/onboarding.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-wMinxHhO.js">
+  <link rel="modulepreload" crossorigin href="/assets/storage-DTlbCHCl.js">
+  <link rel="stylesheet" crossorigin href="/assets/onboarding-BNilDgDE.css">
+</head>
+<body>
+  <div class="container">
+    <div class="step" id="step-1">
+      <h1>Welcome to Tabwise</h1>
+      <p>AI-powered tab organization + screen time tracking. Let's get you set up in 4 quick steps.</p>
+
+      <h2>Choose your AI provider</h2>
+      <div class="provider-grid">
+        <button class="provider-btn active" data-provider="openai">
+          <strong>OpenAI</strong>
+          <span>GPT-4o-mini</span>
+        </button>
+        <button class="provider-btn" data-provider="claude">
+          <strong>Claude</strong>
+          <span>claude-haiku</span>
+        </button>
+        <button class="provider-btn" data-provider="gemini">
+          <strong>Gemini</strong>
+          <span>gemini-1.5-flash</span>
+        </button>
+      </div>
+
+      <button class="btn-next" id="step1-next">Next →</button>
+    </div>
+
+    <div class="step hidden" id="step-2">
+      <h2>Paste your API key</h2>
+      <p id="api-hint">Your key is stored only in your browser and never leaves your device.</p>
+      <input type="password" id="api-key-input" placeholder="sk-..." />
+      <p id="key-error" class="error hidden">Please enter an API key</p>
+      <button class="btn-next" id="step2-next">Next →</button>
+    </div>
+
+    <div class="step hidden" id="step-3">
+      <h2>Your categories</h2>
+      <p>Tabwise will sort your tabs into these groups. You can change them later.</p>
+      <div id="categories-list"></div>
+      <button class="btn-next" id="step3-next">Next →</button>
+    </div>
+
+    <div class="step hidden" id="step-4">
+      <h2>You're all set!</h2>
+      <p>Tabwise will now organize your tabs automatically. Open the popup anytime to see your screen time stats.</p>
+      <button class="btn-next" id="step4-finish">Start using Tabwise</button>
+    </div>
+
+    <div class="progress">
+      <span class="dot active"></span>
+      <span class="dot"></span>
+      <span class="dot"></span>
+      <span class="dot"></span>
+    </div>
+  </div>
+
+</body>
+</html>

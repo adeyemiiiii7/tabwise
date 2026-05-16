@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tabwise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="header">
+    <h1>Tabwise</h1>
+    <span id="status-dot" class="dot"></span>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat">
+      <span id="time-today">0m</span>
+      <label>Today</label>
+    </div>
+    <div class="stat">
+      <span id="tabs-organized">0</span>
+      <label>Organized</label>
+    </div>
+    <div class="stat">
+      <span id="active-category">—</span>
+      <label>Active</label>
+    </div>
+  </div>
+
+  <div class="top-sites">
+    <h2>Top sites today</h2>
+    <ul id="sites-list"></ul>
+  </div>
+
+  <div class="groups-section">
+    <h2>Tab groups <span id="groups-window-label"></span></h2>
+    <div id="groups-list"></div>
+  </div>
+
+  <div class="reorganize">
+    <button id="btn-reorganize">
+      <span id="reorg-icon">⟳</span>
+      <span id="reorg-label">Reorganize all tabs</span>
+    </button>
+  </div>
+
+  <div id="warning-overlay" class="hidden">
+    <div class="warning-box">
+      <p class="warning-title">Reorganize all tabs?</p>
+      <p class="warning-body">This will move every open tab into AI-assigned groups, destroying your current tab arrangement.</p>
+      <div class="warning-actions">
+        <button id="warn-cancel">Cancel</button>
+        <button id="warn-confirm">Yes, reorganize</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btn-dashboard">View Stats</button>
+    <button id="btn-settings">Settings</button>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

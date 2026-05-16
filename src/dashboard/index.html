@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tabwise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">TW<span class="dot">.</span></div>
+      <nav>
+        <a href="#" data-view="overview" class="active">Overview</a>
+        <a href="#" data-view="sites">Sites</a>
+        <a href="#" data-view="categories">Categories</a>
+        <a href="#" data-view="usage">AI Usage</a>
+        <a href="#" data-view="settings">Settings</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="theme-btn" id="theme-toggle">
+          <span class="theme-icon" id="theme-icon">○</span>
+          <span id="theme-label">Light mode</span>
+        </button>
+      </div>
+    </aside>
+
+    <main>
+
+      <!-- ── OVERVIEW ──────────────────────────────────────── -->
+      <div id="view-overview" class="view">
+        <header>
+          <h1>Overview</h1>
+          <span id="ov-date" class="mono dim"></span>
+        </header>
+
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-val" id="ov-time">—</div>
+            <div class="stat-label">Screen time today</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" id="ov-tabs">—</div>
+            <div class="stat-label">Tabs organised</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val mono sm" id="ov-top">—</div>
+            <div class="stat-label">Top site today</div>
+          </div>
+        </div>
+
+        <div class="chart-row">
+          <div class="chart-box wide">
+            <div class="chart-label">This week</div>
+            <canvas id="week-chart"></canvas>
+          </div>
+          <div class="chart-box">
+            <div class="chart-label">By category</div>
+            <canvas id="cat-chart"></canvas>
+          </div>
+        </div>
+
+        <div class="table-box">
+          <div class="table-label">Top sites today</div>
+          <table>
+            <thead><tr><th>Site</th><th>Category</th><th>Time</th></tr></thead>
+            <tbody id="top-sites-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── SITES ─────────────────────────────────────────── -->
+      <div id="view-sites" class="view" style="display:none">
+        <header>
+          <h1>Sites</h1>
+          <div id="sites-filters" class="filter-row"></div>
+        </header>
+        <div id="sites-list" class="sites-list"></div>
+      </div>
+
+      <!-- ── CATEGORIES ────────────────────────────────────── -->
+      <div id="view-categories" class="view" style="display:none">
+        <header><h1>Categories</h1></header>
+        <div id="cats-grid" class="cats-grid"></div>
+      </div>
+
+      <!-- ── AI USAGE ──────────────────────────────────────── -->
+      <div id="view-usage" class="view" style="display:none">
+        <header><h1>AI Usage</h1></header>
+        <div class="stat-grid" id="usage-cards"></div>
+        <div class="table-box" style="margin-top:16px">
+          <div class="table-label">Daily API calls — last 30 days</div>
+          <div style="margin-bottom:18px">
+            <canvas id="usage-chart"></canvas>
+          </div>
+          <p style="font-size:11px;color:var(--text-low);margin-bottom:14px">
+            Cost estimates based on your current provider's public pricing. Actual charges may vary.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th style="text-align:right">Calls</th>
+                <th style="text-align:right">Tokens</th>
+                <th style="text-align:right">Est. Cost</th>
+              </tr>
+            </thead>
+            <tbody id="usage-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── SETTINGS ──────────────────────────────────────── -->
+      <div id="view-settings" class="view" style="display:none">
+        <header>
+          <h1>Settings</h1>
+          <button id="save-btn">Save settings</button>
+        </header>
+
+        <section>
+          <h2>AI Provider</h2>
+          <div class="provider-grid">
+            <label class="provider-card">
+              <input type="radio" name="provider" value="openai" />
+              <div class="card-inner">
+                <div class="provider-name">OpenAI</div>
+                <div class="provider-model">gpt-4o-mini</div>
+              </div>
+            </label>
+            <label class="provider-card">
+              <input type="radio" name="provider" value="claude" />
+              <div class="card-inner">
+                <div class="provider-name">Claude</div>
+                <div class="provider-model">haiku-4-5</div>
+              </div>
+            </label>
+            <label class="provider-card">
+              <input type="radio" name="provider" value="gemini" />
+              <div class="card-inner">
+                <div class="provider-name">Gemini</div>
+                <div class="provider-model">2.0-flash-lite</div>
+              </div>
+            </label>
+          </div>
+
+          <div class="field">
+            <label>API Key</label>
+            <div class="input-row">
+              <input type="password" id="api-key" placeholder="Paste your key here" />
+              <button id="test-btn" class="secondary">Test</button>
+            </div>
+            <div class="hint" id="test-result"></div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Behaviour</h2>
+          <div class="toggle-row">
+            <div>
+              <strong>Auto-organise tabs</strong>
+              <p>Categorise every tab automatically as it opens</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="auto-mode" />
+              <span class="track"></span>
+            </label>
+          </div>
+          <div class="field" style="margin-top:8px">
+            <label>Inactivity alert (hours)</label>
+            <input type="number" id="inactivity" min="1" max="72" style="max-width:100px" />
+            <div class="hint">Notify about tabs untouched for this long</div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Categories</h2>
+          <p class="section-hint">The AI uses these names directly — keep them clear.</p>
+          <div id="categories-list"></div>
+          <div class="add-category-row">
+            <input type="text" id="new-cat-name" placeholder="Category name" />
+            <input type="color" id="new-cat-color" value="#888888" />
+            <button id="add-cat-btn" class="secondary">Add</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Data</h2>
+          <div class="data-block">
+            <div class="data-block-text">
+              <strong>Reset algorithm</strong>
+              <p>Clears saved site picks and API stats. Tabwise will re-ask and relearn from your corrections.</p>
+            </div>
+            <button id="clear-cache-btn" class="secondary">Reset algorithm</button>
+          </div>
+          <div class="data-block">
+            <div class="data-block-text">
+              <strong>Export screen time</strong>
+              <p>Download your full history as a CSV file.</p>
+            </div>
+            <button id="export-btn" class="secondary">Export CSV</button>
+          </div>
+          <div class="data-block danger-block">
+            <div class="data-block-text">
+              <strong>Delete all data</strong>
+              <p>Removes all settings, categories, and screen time. Cannot be undone.</p>
+            </div>
+            <button id="reset-btn" class="danger">Delete all</button>
+          </div>
+        </section>
+      </div>
+
+    </main>
+  </div>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
