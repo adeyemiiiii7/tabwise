@@ -2,7 +2,7 @@ import { getSettings, getLearnedSites, saveLearnedSite } from '../lib/storage'
 import { getProvider, QuotaExceededError } from '../lib/ai'
 import { isValidTab, tabToRecord, getDomain } from '../lib/tabs'
 import { moveTabToCategory, moveGroupToNewWindow, invalidateGroupCache, colorFromHex } from '../lib/groups'
-import { startTracking, flushCurrent, pauseTracking, getActiveTime } from '../lib/screentime'
+import { startTracking, flushCurrent, pauseTracking, getActiveTime, resumeTracking } from '../lib/screentime'
 import { setupAlarm, onAlarm } from '../lib/scheduler'
 import { getTabRecords, saveTabRecords, getQuotaBlock, setQuotaBlock, clearQuotaBlock, isQuotaBlockedToday } from '../lib/storage'
 import { matchCategory } from '../lib/categorizer'
@@ -28,6 +28,16 @@ const lastHandled = new Map<number, string>()
 
 // Held during settings sync so handleTab skips and avoids creating race duplicates.
 let syncLock = false
+
+// On every SW activation: recover which URL was being tracked before SW was killed,
+// then find the actual active tab and start fresh tracking from now.
+;(async () => {
+  await resumeTracking()
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+    if (tab?.url) await startTracking(tab.url)
+  } catch { /* no active tab yet */ }
+})()
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings()
@@ -174,8 +184,15 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   } catch { /* tab gone */ }
 })
 
-chrome.windows.onFocusChanged.addListener(windowId => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) pauseTracking().catch(() => {})
+chrome.windows.onFocusChanged.addListener(async windowId => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    pauseTracking().catch(() => {})
+    return
+  }
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, windowId })
+    if (tab?.url) await startTracking(tab.url)
+  } catch { /* window gone */ }
 })
 
 setInterval(() => { flushCurrent().catch(() => {}) }, 30_000)
