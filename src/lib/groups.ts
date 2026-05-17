@@ -2,6 +2,9 @@ import { Category } from '../types'
 
 type TabGroupColor = 'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'
 
+// Arc's sidebar-based tab UI does not implement chrome.tabs.group — skip grouping there.
+const isArc = navigator.userAgent.includes('Arc/')
+
 function groupTitle(category: Category): string {
   return category.emoji ? `${category.emoji} ${category.name}` : category.name
 }
@@ -46,6 +49,7 @@ function createGroup(tabId: number): Promise<number> {
 }
 
 async function doMove(tabId: number, windowId: number, category: Category): Promise<void> {
+  if (isArc) return
   if (!await tabExists(tabId)) return
 
   const key = cacheKey(windowId, category.name)
@@ -103,7 +107,9 @@ async function doMove(tabId: number, windowId: number, category: Category): Prom
 
 export function moveTabToCategory(tabId: number, windowId: number, category: Category): Promise<void> {
   const key = cacheKey(windowId, category.name)
-  return enqueue(key, () => doMove(tabId, windowId, category).catch(() => {}))
+  return enqueue(key, () => doMove(tabId, windowId, category).catch(err => {
+    console.error('[Tabwise] moveTabToCategory failed:', err)
+  }))
 }
 
 // Pre-register a group ID under a new category name before the browser group is renamed.
