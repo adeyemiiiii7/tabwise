@@ -91,12 +91,12 @@ export async function recordAPICall(inputTokens = 0, outputTokens = 0): Promise<
   const today = new Date().toISOString().split('T')[0]
   const result = await chrome.storage.local.get(['apiUsage', 'apiTokens'])
 
-  const usage: Record<string, number> = result.apiUsage ?? {}
+  const usage: Record<string, number> = (result.apiUsage as Record<string, number> | undefined) ?? {}
   usage[today] = (usage[today] ?? 0) + 1
   const usageKeys = Object.keys(usage).sort()
   if (usageKeys.length > 30) delete usage[usageKeys[0]]
 
-  const tokens: Record<string, { input: number; output: number }> = result.apiTokens ?? {}
+  const tokens: Record<string, { input: number; output: number }> = (result.apiTokens as Record<string, { input: number; output: number }> | undefined) ?? {}
   if (!tokens[today]) tokens[today] = { input: 0, output: 0 }
   tokens[today].input += inputTokens
   tokens[today].output += outputTokens
@@ -108,7 +108,7 @@ export async function recordAPICall(inputTokens = 0, outputTokens = 0): Promise<
 
 export async function getAPIUsageThisMonth(): Promise<number> {
   const result = await chrome.storage.local.get('apiUsage')
-  const usage: Record<string, number> = result.apiUsage ?? {}
+  const usage: Record<string, number> = (result.apiUsage as Record<string, number> | undefined) ?? {}
   const monthPrefix = new Date().toISOString().slice(0, 7)
   return Object.entries(usage)
     .filter(([date]) => date.startsWith(monthPrefix))

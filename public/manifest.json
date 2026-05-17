@@ -3,7 +3,7 @@
   "name": "Tabwise",
   "version": "1.0.0",
   "description": "AI-powered tab organizer with screen time tracking",
-  "permissions": ["tabs", "tabGroups", "storage", "alarms", "notifications", "idle"],
+  "permissions": ["tabs", "tabGroups", "storage", "alarms", "notifications", "idle", "system.memory"],
   "background": {
     "service_worker": "background.js",
     "type": "module"

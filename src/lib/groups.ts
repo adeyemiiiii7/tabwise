@@ -2,18 +2,18 @@ import { Category } from '../types'
 
 type TabGroupColor = 'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'
 
-// ── In-memory group ID cache ──────────────────────────────────────────────────
-// Maps `${windowId}:${categoryName}` → groupId.
-// Lives only for the service worker session — rebuilt on demand when stale.
+function groupTitle(category: Category): string {
+  return category.emoji ? `${category.emoji} ${category.name}` : category.name
+}
+
+// Keyed `${windowId}:${categoryName}`. Lives for the service worker session only — rebuilt on demand when stale.
 const groupCache = new Map<string, number>()
 
 function cacheKey(windowId: number, categoryName: string): string {
   return `${windowId}:${categoryName}`
 }
 
-// ── Per-category operation queue ─────────────────────────────────────────────
-// Serialises all group mutations for a given window+category so concurrent
-// handleTab calls never race to create duplicate groups.
+// Serialises mutations per window+category to prevent concurrent handleTab calls from creating duplicate groups.
 const groupQueues = new Map<string, Promise<void>>()
 
 function enqueue(key: string, op: () => Promise<void>): Promise<void> {
@@ -22,8 +22,6 @@ function enqueue(key: string, op: () => Promise<void>): Promise<void> {
   groupQueues.set(key, next)
   return next
 }
-
-// ── Chrome API helpers ───────────────────────────────────────────────────────
 
 async function tabExists(tabId: number): Promise<boolean> {
   try { await chrome.tabs.get(tabId); return true } catch { return false }
@@ -47,27 +45,23 @@ function createGroup(tabId: number): Promise<number> {
   })
 }
 
-// ── Core move logic (runs serialised per window+category) ────────────────────
-
 async function doMove(tabId: number, windowId: number, category: Category): Promise<void> {
   if (!await tabExists(tabId)) return
 
   const key = cacheKey(windowId, category.name)
 
-  // 0. Idempotent check — if the tab is already in the correct group, nothing to do.
-  //    This is the definitive guard against onCreated + onUpdated double-processing.
+  // Guard against onCreated + onUpdated double-processing the same tab.
   try {
     const currentTab = await chrome.tabs.get(tabId)
     if (currentTab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE) {
       const currentGroup = await chrome.tabGroups.get(currentTab.groupId)
-      if (currentGroup.title === category.name) {
+      if (currentGroup.title === groupTitle(category) || currentGroup.title === category.name) {
         groupCache.set(key, currentGroup.id) // keep cache warm
         return
       }
     }
   } catch { /* tab or group gone — proceed normally */ }
 
-  // 1. Try cached group ID — fast path
   const cached = groupCache.get(key)
   if (cached !== undefined) {
     try {
@@ -82,7 +76,11 @@ async function doMove(tabId: number, windowId: number, category: Category): Prom
   // 2. Query ALL groups (no windowId filter — more reliable across browser builds)
   //    then match by title + windowId manually.
   const allGroups = await chrome.tabGroups.query({})
-  const match = allGroups.find(g => g.title === category.name && g.windowId === windowId)
+  const expectedTitle = groupTitle(category)
+  const match = allGroups.find(g =>
+    g.windowId === windowId &&
+    (g.title === expectedTitle || g.title === category.name)
+  )
 
   if (match) {
     try {
@@ -95,20 +93,25 @@ async function doMove(tabId: number, windowId: number, category: Category): Prom
     }
   }
 
-  // 3. No existing group found — create a new one
   const groupId = await createGroup(tabId)
   await chrome.tabGroups.update(groupId, {
-    title: category.name,
+    title: groupTitle(category),
     color: colorFromHex(category.color),
   })
   groupCache.set(key, groupId)
 }
 
-// ── Public API ───────────────────────────────────────────────────────────────
-
 export function moveTabToCategory(tabId: number, windowId: number, category: Category): Promise<void> {
   const key = cacheKey(windowId, category.name)
   return enqueue(key, () => doMove(tabId, windowId, category).catch(() => {}))
+}
+
+// Pre-register a group ID under a new category name before the browser group is renamed.
+// Call this in SYNC_GROUPS BEFORE chrome.tabGroups.update so concurrent handleTab calls
+// find the existing group instead of creating a duplicate.
+export function preCacheGroupRename(windowId: number, oldName: string, newName: string, groupId: number): void {
+  groupCache.delete(cacheKey(windowId, oldName))
+  groupCache.set(cacheKey(windowId, newName), groupId)
 }
 
 // Clears cached group IDs for a window (call when a group is known to be gone)
@@ -163,7 +166,7 @@ export async function moveGroupToNewWindow(groupTitle: string, sourceWindowId: n
   }
 }
 
-function colorFromHex(hex: string): TabGroupColor {
+export function colorFromHex(hex: string): TabGroupColor {
   const colorMap: Record<string, TabGroupColor> = {
     '#4A90D9': 'blue',
     '#7ED321': 'green',

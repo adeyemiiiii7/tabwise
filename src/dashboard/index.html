@@ -17,7 +17,7 @@
         <a href="#" data-view="overview" class="active">Overview</a>
         <a href="#" data-view="sites">Sites</a>
         <a href="#" data-view="categories">Categories</a>
-        <a href="#" data-view="usage">AI Usage</a>
+        <a href="#" data-view="resources">Resources</a>
         <a href="#" data-view="settings">Settings</a>
       </nav>
       <div class="sidebar-bottom">
@@ -87,30 +87,43 @@
         <div id="cats-grid" class="cats-grid"></div>
       </div>
 
-      <!-- ── AI USAGE ──────────────────────────────────────── -->
-      <div id="view-usage" class="view" style="display:none">
-        <header><h1>AI Usage</h1></header>
-        <div class="stat-grid" id="usage-cards"></div>
-        <div class="table-box" style="margin-top:16px">
-          <div class="table-label">Daily API calls — last 30 days</div>
-          <div style="margin-bottom:18px">
-            <canvas id="usage-chart"></canvas>
+      <!-- ── RESOURCES ─────────────────────────────────────── -->
+      <div id="view-resources" class="view" style="display:none">
+        <header>
+          <h1>Browser Resources</h1>
+          <button id="res-refresh-btn" class="secondary">Refresh</button>
+        </header>
+
+        <div class="stat-grid" id="res-stat-grid"></div>
+
+        <div class="res-pressure-bar-wrap" id="res-pressure-wrap" style="margin-bottom:20px;display:none">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;font-family:'JetBrains Mono',monospace" id="res-pressure-label"></div>
+          <div style="height:6px;border-radius:4px;background:var(--border);overflow:hidden">
+            <div id="res-pressure-bar" style="height:100%;border-radius:4px;transition:width 0.4s"></div>
           </div>
-          <p style="font-size:11px;color:var(--text-low);margin-bottom:14px">
-            Cost estimates based on your current provider's public pricing. Actual charges may vary.
-          </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th style="text-align:right">Calls</th>
-                <th style="text-align:right">Tokens</th>
-                <th style="text-align:right">Est. Cost</th>
-              </tr>
-            </thead>
-            <tbody id="usage-body"></tbody>
-          </table>
         </div>
+
+        <div class="table-box" style="margin-bottom:16px">
+          <div class="table-label">Open tabs — memory impact</div>
+          <table>
+            <thead><tr><th>Tab</th><th>Category</th><th>Impact</th><th>Last visited</th></tr></thead>
+            <tbody id="res-tabs-body"></tbody>
+          </table>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" id="res-actions"></div>
+        </div>
+
+        <div class="table-box">
+          <div class="table-label">Inactive tabs (not visited in 1+ hour)</div>
+          <table>
+            <thead><tr><th>Tab</th><th>Category</th><th>Idle for</th><th></th></tr></thead>
+            <tbody id="res-inactive-body"></tbody>
+          </table>
+          <div style="margin-top:10px" id="res-inactive-actions"></div>
+        </div>
+
+        <p style="font-size:10px;color:var(--text-low);margin-top:16px;font-family:'JetBrains Mono',monospace">
+          Browser RAM is estimated from open tab count — ~110 MB per normal tab, ~300 MB for video/design/IDE tabs, plus ~250 MB browser overhead. Available RAM is read from your OS and is accurate on Mac and Windows.
+        </p>
       </div>
 
       <!-- ── SETTINGS ──────────────────────────────────────── -->
@@ -180,6 +193,7 @@
           <p class="section-hint">The AI uses these names directly — keep them clear.</p>
           <div id="categories-list"></div>
           <div class="add-category-row">
+            <input type="text" id="new-cat-emoji" class="cat-emoji" placeholder="😀" maxlength="4" title="Optional emoji for tab group header" />
             <input type="text" id="new-cat-name" placeholder="Category name" />
             <input type="color" id="new-cat-color" value="#888888" />
             <button id="add-cat-btn" class="secondary">Add</button>

@@ -5,20 +5,18 @@ function todayKey(): string {
   return new Date().toISOString().split('T')[0]
 }
 
-let activeTabId: number | null = null
 let activeUrl: string | null = null
 let activeStart: number | null = null
 
-export async function startTracking(tabId: number, url: string): Promise<void> {
+export async function startTracking(url: string): Promise<void> {
   if (!url.startsWith('http')) return
   await flushCurrent()
-  activeTabId = tabId
   activeUrl = url
   activeStart = Date.now()
 }
 
 export async function flushCurrent(): Promise<void> {
-  if (activeTabId === null || activeStart === null || !activeUrl) return
+  if (activeStart === null || !activeUrl) return
 
   const domain = getDomain(activeUrl)
   const elapsed = Math.floor((Date.now() - activeStart) / 1000)
@@ -33,8 +31,16 @@ export async function flushCurrent(): Promise<void> {
   await saveScreenTime(data)
 }
 
-export function pauseTracking(): void {
-  activeTabId = null
+export async function pauseTracking(): Promise<void> {
+  await flushCurrent()
   activeUrl = null
   activeStart = null
+}
+
+export function getActiveTime(): { domain: string | null; elapsed: number } {
+  if (activeStart === null || !activeUrl) return { domain: null, elapsed: 0 }
+  return {
+    domain: getDomain(activeUrl),
+    elapsed: Math.floor((Date.now() - activeStart) / 1000),
+  }
 }

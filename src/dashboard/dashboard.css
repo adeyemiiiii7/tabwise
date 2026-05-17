@@ -118,6 +118,17 @@ header {
   flex-wrap: wrap;
 }
 
+#view-settings header {
+  position: sticky;
+  top: -48px;
+  z-index: 20;
+  background: var(--bg);
+  padding-top: 48px;
+  padding-bottom: 16px;
+  margin-top: -48px;
+  margin-bottom: 16px;
+}
+
 header h1 {
   font-size: 26px;
   font-weight: 700;
@@ -353,6 +364,11 @@ td:last-child {
   font-weight: 600;
   color: var(--text);
 }
+.cat-card-emoji {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
 
 .cat-card-stats {
   display: flex;
@@ -495,6 +511,7 @@ button.secondary:hover { border-color: var(--text-dim); color: var(--text); }
   border-bottom: 1px solid var(--border2);
 }
 .cat-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.cat-emoji { flex: 0 0 44px; width: 44px; max-width: 44px; text-align: center; font-size: 17px; padding: 4px 2px; }
 .cat-name { flex: 1; }
 
 .delete-cat {
@@ -516,7 +533,7 @@ button.secondary:hover { border-color: var(--text-dim); color: var(--text); }
   margin-top: 14px;
   align-items: center;
 }
-.add-category-row input[type="text"] { flex: 1; }
+.add-category-row input[type="text"]:not(.cat-emoji) { flex: 1; }
 
 input[type="color"] {
   width: 34px; height: 34px;

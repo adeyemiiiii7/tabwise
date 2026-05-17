@@ -2,7 +2,7 @@ import { Settings, ScreenTimeData, TabRecord, DEFAULT_SETTINGS } from '../types'
 
 export async function getSettings(): Promise<Settings> {
   const result = await chrome.storage.local.get('settings')
-  return result.settings ?? DEFAULT_SETTINGS
+  return (result.settings as Settings | undefined) ?? DEFAULT_SETTINGS
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
@@ -11,7 +11,7 @@ export async function saveSettings(settings: Settings): Promise<void> {
 
 export async function getScreenTime(): Promise<ScreenTimeData> {
   const result = await chrome.storage.local.get('screentime')
-  return result.screentime ?? {}
+  return (result.screentime as ScreenTimeData | undefined) ?? {}
 }
 
 export async function saveScreenTime(data: ScreenTimeData): Promise<void> {
@@ -20,17 +20,16 @@ export async function saveScreenTime(data: ScreenTimeData): Promise<void> {
 
 export async function getTabRecords(): Promise<TabRecord[]> {
   const result = await chrome.storage.local.get('tabs')
-  return result.tabs ?? []
+  return (result.tabs as TabRecord[] | undefined) ?? []
 }
 
 export async function saveTabRecords(tabs: TabRecord[]): Promise<void> {
   await chrome.storage.local.set({ tabs })
 }
 
-// Learned sites: domain → category name, saved from user picks
 export async function getLearnedSites(): Promise<Record<string, string>> {
   const result = await chrome.storage.local.get('learnedSites')
-  return result.learnedSites ?? {}
+  return (result.learnedSites as Record<string, string> | undefined) ?? {}
 }
 
 export async function saveLearnedSite(domain: string, category: string): Promise<void> {
@@ -60,7 +59,6 @@ export async function clearQuotaBlock(): Promise<void> {
   await chrome.storage.local.remove('quotaBlock')
 }
 
-// Returns true if the quota was blocked today (UTC date match)
 export function isQuotaBlockedToday(block: QuotaBlock): boolean {
   const blockedDate = new Date(block.blockedAt).toISOString().split('T')[0]
   const today = new Date().toISOString().split('T')[0]

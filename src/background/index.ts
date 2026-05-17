@@ -1,14 +1,11 @@
 import { getSettings, getLearnedSites, saveLearnedSite } from '../lib/storage'
-import { getProvider } from '../lib/ai'
-import { QuotaExceededError } from '../lib/ai'
+import { getProvider, QuotaExceededError } from '../lib/ai'
 import { isValidTab, tabToRecord, getDomain } from '../lib/tabs'
-import { moveTabToCategory, moveGroupToNewWindow } from '../lib/groups'
-import { startTracking, flushCurrent, pauseTracking } from '../lib/screentime'
+import { moveTabToCategory, moveGroupToNewWindow, invalidateGroupCache, colorFromHex } from '../lib/groups'
+import { startTracking, flushCurrent, pauseTracking, getActiveTime } from '../lib/screentime'
 import { setupAlarm, onAlarm } from '../lib/scheduler'
-import { getTabRecords, saveTabRecords } from '../lib/storage'
-import { getQuotaBlock, setQuotaBlock, clearQuotaBlock, isQuotaBlockedToday } from '../lib/storage'
+import { getTabRecords, saveTabRecords, getQuotaBlock, setQuotaBlock, clearQuotaBlock, isQuotaBlockedToday } from '../lib/storage'
 import { matchCategory } from '../lib/categorizer'
-import { lookupKnownSite } from '../lib/knownSites'
 import { buildRAGContext, recordAPICall } from '../lib/rag'
 import { offlineCategorize } from '../lib/offlineCategorizer'
 
@@ -25,10 +22,12 @@ function invalidateRAGCache() {
   cachedRAGContext = null
 }
 
-// Debounce: skip handleTab if we already processed this tab+URL recently.
-// Prevents onCreated (3s delay) and onUpdated (on load) from double-processing
-// the same tab, and stops SPA navigation from re-grouping on every route change.
-const lastHandled = new Map<number, string>() // tabId → last URL processed
+// Prevents onCreated + onUpdated from double-processing the same tab and stops SPA
+// navigation from re-grouping on every route change.
+const lastHandled = new Map<number, string>()
+
+// Held during settings sync so handleTab skips and avoids creating race duplicates.
+let syncLock = false
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings()
@@ -42,9 +41,8 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
   const url = tab.url ?? ''
   const title = tab.title ?? ''
   if (!isValidTab(url) || !tab.id || !tab.windowId) return
+  if (syncLock) return
 
-  // Skip if we already processed this exact tab+URL — handles onCreated/onUpdated
-  // double-firing and SPA route changes within the same site
   if (lastHandled.get(tab.id) === url) return
   lastHandled.set(tab.id, url)
 
@@ -60,7 +58,6 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
   const categoryNames = settings.categories.map(c => c.name)
   const learned = await getLearnedSites()
 
-  // Tier 1: User's saved picks — silent, always win, no API needed
   if (learned[domain] && categoryNames.includes(learned[domain])) {
     const category = matchCategory(learned[domain], settings.categories)
     await moveTabToCategory(tab.id, tab.windowId, category)
@@ -68,20 +65,16 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
     return
   }
 
-  // Check if AI is quota-blocked for today
   const quotaBlock = await getQuotaBlock()
   if (quotaBlock && isQuotaBlockedToday(quotaBlock)) {
-    // Smart offline system — keeps organising without any API call
     const result = offlineCategorize(url, title, categoryNames)
     const category = matchCategory(result.category, settings.categories)
     await moveTabToCategory(tab.id, tab.windowId, category)
     await updateRecord(tab, category.name)
-    // High confidence → confirm (auto-dismisses); low → ask (user teaches the system)
     sendToast(tab.id, domain, category.name, categoryNames, result.confidence === 'high' ? 'confirm' : 'ask')
     return
   }
 
-  // Tier 2: AI + RAG — all systems working together
   const ragContext = await getRAGContext(settings)
   const provider = getProvider(settings.provider, settings.apiKey)
 
@@ -93,12 +86,10 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
     categoryName = result.category
     aiOk = true
     await recordAPICall(result.inputTokens, result.outputTokens)
-    // AI recovered — clear any stale quota block from a previous day
     if (quotaBlock) await clearQuotaBlock()
   } catch (err) {
     if (err instanceof QuotaExceededError) {
       await handleQuotaExceeded(err.provider)
-      // Smart offline categorization for this tab
       const result = offlineCategorize(url, title, categoryNames)
       const category = matchCategory(result.category, settings.categories)
       await moveTabToCategory(tab.id, tab.windowId, category)
@@ -106,11 +97,10 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
       sendToast(tab.id, domain, category.name, categoryNames, result.confidence === 'high' ? 'confirm' : 'ask')
       return
     }
-    // Other errors (network, bad key): log + emergency known-site lookup
-    console.error('[Tabwise] AI categorization failed — check your API key:', err)
+    console.error('[Tabwise] AI categorization failed:', err)
     await recordAPICall(0, 0)
-    const known = lookupKnownSite(domain)
-    if (known && categoryNames.includes(known)) categoryName = known
+    const offlineResult = offlineCategorize(url, title, categoryNames)
+    categoryName = offlineResult.category
   }
 
   if (!categoryName || !categoryNames.includes(categoryName)) {
@@ -180,13 +170,15 @@ chrome.tabs.onUpdated.addListener((_, changeInfo, tab) => {
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await chrome.tabs.get(tabId)
-    if (tab.url) await startTracking(tabId, tab.url)
+    if (tab.url) await startTracking(tab.url)
   } catch { /* tab gone */ }
 })
 
 chrome.windows.onFocusChanged.addListener(windowId => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) pauseTracking()
+  if (windowId === chrome.windows.WINDOW_ID_NONE) pauseTracking().catch(() => {})
 })
+
+setInterval(() => { flushCurrent().catch(() => {}) }, 30_000)
 
 chrome.tabs.onRemoved.addListener(tabId => {
   lastHandled.delete(tabId)
@@ -197,6 +189,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'INVALIDATE_CACHE') {
     invalidateRAGCache()
     sendResponse({ success: true })
+    return true
+  }
+
+  if (message.type === 'GET_ACTIVE_TIME') {
+    sendResponse(getActiveTime())
     return true
   }
 
@@ -237,6 +234,72 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await moveGroupToNewWindow(message.groupTitle, focused.id)
         sendResponse({ success: true })
       } catch { sendResponse({ success: false }) }
+    })()
+    return true
+  }
+
+  if (message.type === 'SYNC_GROUPS') {
+    ;(async () => {
+      syncLock = true
+      try {
+        const [settings, tabRecords, allTabs, allGroups] = await Promise.all([
+          getSettings(),
+          getTabRecords(),
+          chrome.tabs.query({}),
+          chrome.tabGroups.query({}),
+        ])
+
+        function catTitle(cat: { name: string; emoji?: string }) {
+          return cat.emoji ? `${cat.emoji} ${cat.name}` : cat.name
+        }
+
+        for (const group of allGroups) {
+          const tabsInGroup = allTabs.filter(t => t.groupId === group.id && t.url?.startsWith('http'))
+          const catCount = new Map<string, number>()
+          for (const tab of tabsInGroup) {
+            const domain = getDomain(tab.url!)
+            const rec = tabRecords.find(r => r.domain === domain) ?? tabRecords.find(r => r.tabId === tab.id)
+            if (rec?.category) catCount.set(rec.category, (catCount.get(rec.category) ?? 0) + 1)
+          }
+          let winCat = '', winCount = 0
+          for (const [cat, n] of catCount) { if (n > winCount) { winCat = cat; winCount = n } }
+          const newCat = settings.categories.find(c => c.name === winCat)
+          if (!newCat) continue
+          await chrome.tabGroups.update(group.id, {
+            title: catTitle(newCat),
+            color: colorFromHex(newCat.color),
+          })
+        }
+
+        invalidateGroupCache()
+        const freshGroups = await chrome.tabGroups.query({})
+        const freshTabs  = await chrome.tabs.query({})
+        const byWindow = new Map<number, Map<string, number[]>>()
+        for (const g of freshGroups) {
+          if (!g.title || !g.windowId) continue
+          if (!byWindow.has(g.windowId)) byWindow.set(g.windowId, new Map())
+          const m = byWindow.get(g.windowId)!
+          m.set(g.title, [...(m.get(g.title) ?? []), g.id])
+        }
+        for (const titleMap of byWindow.values()) {
+          for (const [, ids] of titleMap) {
+            if (ids.length <= 1) continue
+            const keepId = ids[0]
+            for (const dupId of ids.slice(1)) {
+              const toMove = freshTabs.filter(t => t.groupId === dupId && t.id).map(t => t.id!)
+              if (toMove.length > 0) {
+                await chrome.tabs.group({ tabIds: toMove as [number, ...number[]], groupId: keepId })
+              }
+            }
+          }
+        }
+
+        sendResponse({ success: true })
+      } catch {
+        sendResponse({ success: false })
+      } finally {
+        syncLock = false
+      }
     })()
     return true
   }
@@ -287,8 +350,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
               } else {
                 console.error('[Tabwise] REORGANIZE AI failed for', tab.url, err)
                 await recordAPICall(0, 0)
-                const known = lookupKnownSite(domain)
-                if (known && categoryNames.includes(known)) categoryName = known
+                const offlineResult = offlineCategorize(tab.url!, tab.title ?? '', categoryNames)
+                categoryName = offlineResult.category
               }
             }
           }

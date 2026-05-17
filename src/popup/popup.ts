@@ -1,6 +1,6 @@
 import { getScreenTime, getTabRecords, getSettings } from '../lib/storage'
 
-function formatSeconds(s: number): string {
+function fmt(s: number): string {
   if (s < 60) return `${s}s`
   if (s < 3600) return `${Math.floor(s / 60)}m`
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
@@ -18,41 +18,87 @@ function todayKey(): string {
   return new Date().toISOString().split('T')[0]
 }
 
-async function init() {
-  const [screentime, records, settings] = await Promise.all([
+const el = (id: string) => document.getElementById(id)!
+
+async function getLiveTime(): Promise<{ domain: string | null; elapsed: number }> {
+  try {
+    return await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TIME' })
+  } catch {
+    return { domain: null, elapsed: 0 }
+  }
+}
+
+async function renderStats() {
+  const [screentime, records, live] = await Promise.all([
     getScreenTime(),
     getTabRecords(),
-    getSettings(),
+    getLiveTime(),
   ])
 
   const today = screentime[todayKey()] ?? {}
-  const totalSeconds = Object.values(today).reduce((a, b) => a + b, 0)
 
-  const el = (id: string) => document.getElementById(id)!
-  el('time-today').textContent = formatSeconds(totalSeconds)
+  function liveSeconds(domain: string): number {
+    return (today[domain] ?? 0) + (domain === live.domain ? live.elapsed : 0)
+  }
+
+  const allDomains = new Set([...Object.keys(today), ...(live.domain ? [live.domain] : [])])
+
+  const totalSeconds = Array.from(allDomains).reduce((sum, d) => sum + liveSeconds(d), 0)
+  el('time-today').textContent = fmt(totalSeconds)
   el('tabs-organized').textContent = String(records.length)
 
-  const topDomain = Object.entries(today).sort((a, b) => b[1] - a[1])[0]
-  if (topDomain) {
-    const record = records.find(r => r.domain === topDomain[0])
-    el('active-category').textContent = record?.category ?? '—'
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+    if (activeTab?.url?.startsWith('http')) {
+      const domain = new URL(activeTab.url).hostname.replace(/^www\./, '')
+      const record = records.find(r => r.domain === domain)
+      el('active-category').textContent = record?.category ?? '—'
+    } else {
+      const record = live.domain ? records.find(r => r.domain === live.domain) : null
+      el('active-category').textContent = record?.category ?? '—'
+    }
+  } catch {
+    el('active-category').textContent = '—'
   }
 
   const list = el('sites-list')
-  Object.entries(today)
+  const existingItems = list.querySelectorAll('li')
+
+  const topSites = Array.from(allDomains)
+    .map(d => [d, liveSeconds(d)] as [string, number])
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .forEach(([domain, secs]) => {
+
+  if (existingItems.length === topSites.length) {
+    // Update in-place to avoid flicker
+    existingItems.forEach((li, i) => {
+      const [domain, secs] = topSites[i]
+      const domEl = li.querySelector<HTMLElement>('.domain')
+      const timeEl = li.querySelector<HTMLElement>('span:last-child')
+      if (domEl) domEl.textContent = domain
+      if (timeEl) timeEl.textContent = fmt(secs)
+    })
+  } else {
+    list.innerHTML = ''
+    topSites.forEach(([domain, secs]) => {
       const li = document.createElement('li')
-      li.innerHTML = `<span class="domain">${domain}</span><span>${formatSeconds(secs)}</span>`
+      li.innerHTML = `<span class="domain">${domain}</span><span>${fmt(secs)}</span>`
       list.appendChild(li)
     })
+  }
+}
+
+async function init() {
+  const settings = await getSettings()
 
   if (!settings.apiKey || !settings.onboardingComplete) {
     document.querySelector('.dot')!.setAttribute('style', 'background:#333; box-shadow:none')
   }
 
-  // Show tab groups in current window with "Move to new window" option
+  await renderStats()
+
+  setInterval(renderStats, 10_000)
+
   const currentWindow = await chrome.windows.getCurrent()
   if (currentWindow.id) {
     const groups = await chrome.tabGroups.query({ windowId: currentWindow.id })
@@ -95,9 +141,8 @@ async function init() {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/dashboard/index.html') + '#settings' })
   })
 
-  // Reorganize button — show warning first
   const overlay = el('warning-overlay')
-  const reorgBtn = el('btn-reorganize')
+  const reorgBtn = el('btn-reorganize') as HTMLButtonElement
 
   reorgBtn.addEventListener('click', () => {
     if (!settings.apiKey || !settings.onboardingComplete) {
