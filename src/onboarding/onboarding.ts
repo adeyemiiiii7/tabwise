@@ -17,7 +17,6 @@ function showStep(n: number) {
 async function init() {
   const settings = await getSettings()
 
-  // Provider selection
   document.querySelectorAll<HTMLButtonElement>('.provider-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'))
@@ -28,7 +27,6 @@ async function init() {
 
   document.getElementById('step1-next')!.addEventListener('click', () => showStep(2))
 
-  // API key
   const hints: Record<AIProviderName, string> = {
     openai: 'Get your key at platform.openai.com → API keys',
     claude: 'Get your key at console.anthropic.com → API keys',
@@ -47,7 +45,6 @@ async function init() {
 
   document.getElementById('api-hint')!.textContent = hints[selectedProvider]
 
-  // Categories
   const list = document.getElementById('categories-list')!
   DEFAULT_CATEGORIES.forEach(cat => {
     const chip = document.createElement('div')

@@ -6,8 +6,6 @@ export interface RAGContext {
   userExamples: string
 }
 
-// Representative site examples embedded in AI context so the model has strong priors.
-// These inform the AI without bypassing it — the AI still makes the final call.
 const SITE_EXAMPLES_BY_CATEGORY: Record<string, string[]> = {
   Entertainment: [
     'netflix.com', 'spotify.com', 'twitch.tv', 'roblox.com',
@@ -39,7 +37,6 @@ export async function buildRAGContext(settings: Settings): Promise<RAGContext> {
 
   const categoryNames = settings.categories.map(c => c.name)
 
-  // Build per-category user history (up to 8 domains each)
   const userHistory: Record<string, string[]> = {}
   categoryNames.forEach(name => { userHistory[name] = [] })
 
@@ -55,7 +52,6 @@ export async function buildRAGContext(settings: Settings): Promise<RAGContext> {
     }
   }
 
-  // Build site hints from known examples, filtered to active categories
   const siteHintLines: string[] = []
   for (const cat of categoryNames) {
     const builtInExamples = SITE_EXAMPLES_BY_CATEGORY[cat] ?? []
@@ -64,7 +60,6 @@ export async function buildRAGContext(settings: Settings): Promise<RAGContext> {
     }
   }
 
-  // Build user history lines
   const userHistoryLines: string[] = []
   for (const [cat, domains] of Object.entries(userHistory)) {
     if (domains.length > 0) {

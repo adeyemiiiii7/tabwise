@@ -1,17 +1,3 @@
-// Smart offline categorizer — runs when the AI quota is exhausted.
-// Not a dumb fallback: uses a multi-signal scoring system so Tabwise
-// keeps organising tabs intelligently without any API calls.
-//
-// Signal pipeline:
-//   1. lookupKnownSite   — 300+ curated exact-domain matches
-//   2. Domain analysis   — TLD, subdomain, and path patterns
-//   3. Title analysis    — keyword signals in the page title
-//
-// Each signal carries a strength (1–3). Signals are summed per canonical
-// category; the highest-scoring category wins. Confidence is "high" when
-// the winning score ≥ 3 (show confirm toast), "low" otherwise (show ask
-// toast so the user can teach the system — every pick is saved to learnedSites).
-
 import { lookupKnownSite } from './knownSites'
 
 export interface OfflineResult {
@@ -20,8 +6,8 @@ export interface OfflineResult {
 }
 
 interface Signal {
-  category: string   // canonical: 'Entertainment' | 'Work' | 'School' | 'Personal'
-  strength: number   // 1=weak, 2=medium, 3=strong
+  category: string
+  strength: number
 }
 
 function getPath(url: string): string {
@@ -32,12 +18,10 @@ function analyzeUrl(url: string, domain: string): Signal[] {
   const signals: Signal[] = []
   const path = getPath(url)
 
-  // ── TLD patterns ─────────────────────────────────────────
   if (domain.endsWith('.edu') || /\.ac\.[a-z]{2}$/.test(domain)) {
     signals.push({ category: 'School', strength: 3 })
   }
 
-  // ── Subdomain patterns ────────────────────────────────────
   const sub = domain.split('.')[0].toLowerCase()
 
   if (/^(mail|inbox|webmail|post)$/.test(sub)) {
@@ -65,7 +49,6 @@ function analyzeUrl(url: string, domain: string): Signal[] {
     signals.push({ category: 'Entertainment', strength: 2 })
   }
 
-  // ── Path patterns ─────────────────────────────────────────
   if (/\/(watch|stream|episode|anime|film|movies?|shows?|playlist|trailer)\b/.test(path)) {
     signals.push({ category: 'Entertainment', strength: 2 })
   }
@@ -108,7 +91,6 @@ function analyzeTitle(title: string): Signal[] {
   const signals: Signal[] = []
   const t = title.toLowerCase()
 
-  // ── Shopping / Personal ───────────────────────────────────
   if (/\b(your cart|shopping cart|checkout|place order|order confirmation|items? in bag)\b/.test(t)) {
     signals.push({ category: 'Personal', strength: 3 })
   }
@@ -116,7 +98,6 @@ function analyzeTitle(title: string): Signal[] {
     signals.push({ category: 'Personal', strength: 2 })
   }
 
-  // ── Work ─────────────────────────────────────────────────
   if (/\b(pull request|code review|issue #?\d+|sprint|standup|deploy|ci\/cd|pipeline)\b/.test(t)) {
     signals.push({ category: 'Work', strength: 3 })
   }
@@ -127,7 +108,6 @@ function analyzeTitle(title: string): Signal[] {
     signals.push({ category: 'Work', strength: 2 })
   }
 
-  // ── School / Learning ─────────────────────────────────────
   if (/\b(tutorial|how[- ]to|step[- ]by[- ]step|course:|lesson \d+|chapter \d+|lecture|homework|assignment)\b/.test(t)) {
     signals.push({ category: 'School', strength: 2 })
   }
@@ -135,7 +115,6 @@ function analyzeTitle(title: string): Signal[] {
     signals.push({ category: 'School', strength: 2 })
   }
 
-  // ── Entertainment ─────────────────────────────────────────
   if (/\b(watch .+online|episode \d+|season \d+|now streaming|now playing|full (episode|movie))\b/.test(t)) {
     signals.push({ category: 'Entertainment', strength: 2 })
   }
@@ -149,7 +128,6 @@ function analyzeTitle(title: string): Signal[] {
   return signals
 }
 
-// Map a canonical category name to the user's actual category list (fuzzy match)
 function resolveCategory(canonical: string, categoryNames: string[]): string | null {
   const lower = canonical.toLowerCase()
   return (
@@ -161,7 +139,6 @@ function resolveCategory(canonical: string, categoryNames: string[]): string | n
 }
 
 export function offlineCategorize(url: string, title: string, categoryNames: string[]): OfflineResult {
-  // Level 1: exact known-site match (300+ curated domains)
   try {
     const domain = new URL(url).hostname.replace(/^www\./, '')
     const known = lookupKnownSite(domain)
@@ -171,7 +148,6 @@ export function offlineCategorize(url: string, title: string, categoryNames: str
     }
   } catch { /* invalid URL — fall through */ }
 
-  // Level 2 + 3: multi-signal pattern scoring
   let domain = ''
   try { domain = new URL(url).hostname.replace(/^www\./, '') } catch { /* ok */ }
 
@@ -181,7 +157,6 @@ export function offlineCategorize(url: string, title: string, categoryNames: str
     return { category: categoryNames[0], confidence: 'low' }
   }
 
-  // Aggregate scores per canonical category
   const scores: Record<string, number> = {}
   for (const { category, strength } of signals) {
     scores[category] = (scores[category] ?? 0) + strength

@@ -1,11 +1,7 @@
-// Comprehensive domain → category lookup based on Similarweb/Semrush top-site data (2025).
 // Only UNAMBIGUOUS sites live here — sites that clearly belong to one category for any user.
 // Ambiguous sites (YouTube, Udemy, Reddit, etc.) are in AMBIGUOUS_SITES and always ask the user.
 
 const KNOWN_SITES: Record<string, string> = {
-
-  // ── ENTERTAINMENT ──────────────────────────────────────────────────────────
-  // Streaming video
   'netflix.com': 'Entertainment',
   'hulu.com': 'Entertainment',
   'disneyplus.com': 'Entertainment',
@@ -22,8 +18,6 @@ const KNOWN_SITES: Record<string, string> = {
   'twitch.tv': 'Entertainment',
   'dailymotion.com': 'Entertainment',
   'rutube.ru': 'Entertainment',
-
-  // Music
   'spotify.com': 'Entertainment',
   'soundcloud.com': 'Entertainment',
   'pandora.com': 'Entertainment',
@@ -32,8 +26,6 @@ const KNOWN_SITES: Record<string, string> = {
   'music.apple.com': 'Entertainment',
   'last.fm': 'Entertainment',
   'bandcamp.com': 'Entertainment',
-
-  // Gaming
   'roblox.com': 'Entertainment',
   'store.steampowered.com': 'Entertainment',
   'steampowered.com': 'Entertainment',
@@ -44,8 +36,6 @@ const KNOWN_SITES: Record<string, string> = {
   'miniclip.com': 'Entertainment',
   'kongregate.com': 'Entertainment',
   'chess.com': 'Entertainment',
-
-  // Sports
   'espn.com': 'Entertainment',
   'cricbuzz.com': 'Entertainment',
   'nba.com': 'Entertainment',
@@ -54,8 +44,6 @@ const KNOWN_SITES: Record<string, string> = {
   'goal.com': 'Entertainment',
   'transfermarkt.com': 'Entertainment',
   'sofascore.com': 'Entertainment',
-
-  // Art & media
   'imdb.com': 'Entertainment',
   'fandom.com': 'Entertainment',
   'pixiv.net': 'Entertainment',
@@ -67,8 +55,6 @@ const KNOWN_SITES: Record<string, string> = {
   'giphy.com': 'Entertainment',
   'webtoons.com': 'Entertainment',
 
-  // ── WORK / PRODUCTIVITY ────────────────────────────────────────────────────
-  // Dev tools & version control
   'github.com': 'Work',
   'gitlab.com': 'Work',
   'bitbucket.org': 'Work',
@@ -77,8 +63,6 @@ const KNOWN_SITES: Record<string, string> = {
   'codesandbox.io': 'Work',
   'stackoverflow.com': 'Work',
   'jsfiddle.net': 'Work',
-
-  // Cloud & infrastructure
   'aws.amazon.com': 'Work',
   'console.cloud.google.com': 'Work',
   'portal.azure.com': 'Work',
@@ -91,8 +75,6 @@ const KNOWN_SITES: Record<string, string> = {
   'render.com': 'Work',
   'supabase.com': 'Work',
   'firebase.google.com': 'Work',
-
-  // Project management & planning
   'linear.app': 'Work',
   'jira.atlassian.com': 'Work',
   'confluence.atlassian.com': 'Work',
@@ -104,8 +86,6 @@ const KNOWN_SITES: Record<string, string> = {
   'basecamp.com': 'Work',
   'height.app': 'Work',
   'shortcut.com': 'Work',
-
-  // Design
   'figma.com': 'Work',
   'miro.com': 'Work',
   'canva.com': 'Work',
@@ -116,8 +96,6 @@ const KNOWN_SITES: Record<string, string> = {
   'adobe.com': 'Work',
   'behance.net': 'Work',
   'dribbble.com': 'Work',
-
-  // Office & docs
   'office.com': 'Work',
   'office365.com': 'Work',
   'sharepoint.com': 'Work',
@@ -127,8 +105,6 @@ const KNOWN_SITES: Record<string, string> = {
   'webex.com': 'Work',
   'whereby.com': 'Work',
   'loom.com': 'Work',
-
-  // CRM / sales / HR
   'salesforce.com': 'Work',
   'hubspot.com': 'Work',
   'zendesk.com': 'Work',
@@ -136,15 +112,11 @@ const KNOWN_SITES: Record<string, string> = {
   'pipedrive.com': 'Work',
   'airtable.com': 'Work',
   'typeform.com': 'Work',
-
-  // Finance & payments (business)
   'stripe.com': 'Work',
   'square.com': 'Work',
   'quickbooks.intuit.com': 'Work',
   'xero.com': 'Work',
   'freshbooks.com': 'Work',
-
-  // Jobs
   'indeed.com': 'Work',
   'glassdoor.com': 'Work',
   'upwork.com': 'Work',
@@ -153,8 +125,6 @@ const KNOWN_SITES: Record<string, string> = {
   'wellfound.com': 'Work',
   'ycombinator.com': 'Work',
   'producthunt.com': 'Work',
-
-  // Misc productivity
   'grammarly.com': 'Work',
   'calendly.com': 'Work',
   'todoist.com': 'Work',
@@ -164,8 +134,6 @@ const KNOWN_SITES: Record<string, string> = {
   'dropbox.com': 'Work',
   'box.com': 'Work',
   'docusign.com': 'Work',
-
-  // AI tools (work context)
   'openai.com': 'Work',
   'chat.openai.com': 'Work',
   'anthropic.com': 'Work',
@@ -185,8 +153,6 @@ const KNOWN_SITES: Record<string, string> = {
   'mistral.ai': 'Work',
   'groq.com': 'Work',
 
-  // ── SCHOOL / LEARNING ──────────────────────────────────────────────────────
-  // Unambiguously educational platforms
   'khanacademy.org': 'School',
   'edx.org': 'School',
   'coursera.org': 'School',
@@ -211,8 +177,6 @@ const KNOWN_SITES: Record<string, string> = {
   'anki.tenderapp.com': 'School',
   'ankiweb.net': 'School',
   'chegg.com': 'School',
-
-  // Reference
   'wikipedia.org': 'School',
   'britannica.com': 'School',
   'scholar.google.com': 'School',
@@ -220,21 +184,15 @@ const KNOWN_SITES: Record<string, string> = {
   'academia.edu': 'School',
   'jstor.org': 'School',
   'arxiv.org': 'School',
-
-  // LMS
   'canvas.instructure.com': 'School',
   'instructure.com': 'School',
   'blackboard.com': 'School',
   'moodle.org': 'School',
-
-  // Universities
   'mit.edu': 'School',
   'harvard.edu': 'School',
   'stanford.edu': 'School',
   'ocw.mit.edu': 'School',
 
-  // ── PERSONAL ───────────────────────────────────────────────────────────────
-  // Email
   'mail.google.com': 'Personal',
   'outlook.live.com': 'Personal',
   'proton.me': 'Personal',
@@ -242,8 +200,6 @@ const KNOWN_SITES: Record<string, string> = {
   'yahoo.com': 'Personal',
   'mail.yahoo.com': 'Personal',
   'zoho.com': 'Personal',
-
-  // Messaging
   'web.whatsapp.com': 'Personal',
   'whatsapp.com': 'Personal',
   'telegram.org': 'Personal',
@@ -253,8 +209,6 @@ const KNOWN_SITES: Record<string, string> = {
   'viber.com': 'Personal',
   'line.me': 'Personal',
   'kakao.com': 'Personal',
-
-  // Shopping & finance
   'amazon.com': 'Personal',
   'ebay.com': 'Personal',
   'etsy.com': 'Personal',
@@ -266,21 +220,15 @@ const KNOWN_SITES: Record<string, string> = {
   'revolut.com': 'Personal',
   'robinhood.com': 'Personal',
   'coinbase.com': 'Personal',
-
-  // Maps & travel
   'maps.google.com': 'Personal',
   'google.com/maps': 'Personal',
   'tripadvisor.com': 'Personal',
   'airbnb.com': 'Personal',
   'booking.com': 'Personal',
   'expedia.com': 'Personal',
-
-  // Cloud storage & personal files
   'photos.google.com': 'Personal',
   'icloud.com': 'Personal',
   'onedrive.live.com': 'Personal',
-
-  // Social — clearly personal
   'pinterest.com': 'Personal',
   'vk.com': 'Personal',
   'ok.ru': 'Personal',
@@ -290,8 +238,6 @@ const KNOWN_SITES: Record<string, string> = {
   'tinder.com': 'Personal',
   'bumble.com': 'Personal',
   'hinge.co': 'Personal',
-
-  // News (personal reading habit)
   'bbc.com': 'Personal',
   'cnn.com': 'Personal',
   'nytimes.com': 'Personal',
@@ -299,12 +245,8 @@ const KNOWN_SITES: Record<string, string> = {
   'msn.com': 'Personal',
   'reuters.com': 'Personal',
   'apnews.com': 'Personal',
-
-  // Writing & publishing — personal reading/writing, not work
   'medium.com': 'Personal',
   'substack.com': 'Personal',
-
-  // Auth & identity — always Personal, never needs asking
   'accounts.google.com': 'Personal',
   'myaccount.google.com': 'Personal',
   'login.microsoftonline.com': 'Personal',
@@ -314,8 +256,7 @@ const KNOWN_SITES: Record<string, string> = {
   'github.com/session': 'Work',
 }
 
-// Sites that are AMBIGUOUS — their purpose depends entirely on the user.
-// Tabwise always asks the user how to classify these and saves the answer.
+// Sites whose purpose depends entirely on the user — Tabwise always asks and saves the answer.
 export const AMBIGUOUS_SITES = new Set([
   'youtube.com',        // entertainment, school, or work
   'udemy.com',          // school, work, or personal hobby
