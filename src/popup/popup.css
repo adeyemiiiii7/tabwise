@@ -30,7 +30,7 @@ h1 {
 h2 {
   font-size: 10px;
   font-weight: 600;
-  color: #333;
+  color: #666;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-bottom: 10px;
@@ -52,8 +52,8 @@ h2 {
 
 .stat {
   flex: 1;
-  background: #0f0f0f;
-  border: 1px solid #111;
+  background: #141414;
+  border: 1px solid #222;
   border-radius: 8px;
   padding: 12px 10px;
   text-align: center;
@@ -69,7 +69,7 @@ h2 {
 
 .stat label {
   font-size: 9px;
-  color: #333;
+  color: #666;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-top: 2px;
@@ -85,14 +85,14 @@ h2 {
   align-items: center;
   font-size: 12px;
   padding: 6px 0;
-  border-bottom: 1px solid #0f0f0f;
-  color: #aaa;
+  border-bottom: 1px solid #1a1a1a;
+  color: #bbb;
 }
 
 #sites-list li .domain {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: #666;
+  color: #888;
 }
 
 #sites-list li span:last-child {
@@ -103,16 +103,16 @@ h2 {
 
 .groups-section { margin-bottom: 14px; }
 
-.no-groups { font-size: 11px; color: #333; font-family: 'JetBrains Mono', monospace; }
+.no-groups { font-size: 11px; color: #666; font-family: 'JetBrains Mono', monospace; }
 
-#groups-window-label { color: #333; font-weight: 400; font-size: 9px; }
+#groups-window-label { color: #666; font-weight: 400; font-size: 9px; }
 
 .group-row {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 0;
-  border-bottom: 1px solid #0f0f0f;
+  border-bottom: 1px solid #1a1a1a;
 }
 
 .group-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -124,16 +124,16 @@ h2 {
   white-space: nowrap;
   padding: 4px 8px;
   background: transparent;
-  border: 1px solid #1a1a1a;
+  border: 1px solid #2a2a2a;
   border-radius: 4px;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 10px;
   font-weight: 600;
-  color: #444;
+  color: #777;
   cursor: pointer;
   transition: all 0.15s;
 }
-.move-btn:hover { border-color: #333; color: #fff; }
+.move-btn:hover { border-color: #555; color: #fff; }
 .move-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .reorganize { margin-bottom: 10px; }
@@ -142,12 +142,12 @@ h2 {
   width: 100%;
   padding: 11px 14px;
   background: transparent;
-  border: 1px solid #1a1a1a;
+  border: 1px solid #2a2a2a;
   border-radius: 6px;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 12px;
   font-weight: 600;
-  color: #aaa;
+  color: #bbb;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -155,7 +155,7 @@ h2 {
   transition: all 0.15s;
   letter-spacing: 0.01em;
 }
-#btn-reorganize:hover { border-color: #333; color: #fff; }
+#btn-reorganize:hover { border-color: #555; color: #fff; }
 #btn-reorganize:disabled { opacity: 0.5; cursor: not-allowed; }
 #reorg-icon { font-size: 14px; width: 16px; text-align: center; }
 
@@ -190,7 +190,7 @@ h2 {
 
 .warning-body {
   font-size: 12px;
-  color: #555;
+  color: #888;
   line-height: 1.5;
   margin-bottom: 16px;
 }
@@ -209,8 +209,8 @@ h2 {
 
 #warn-cancel {
   background: transparent;
-  border: 1px solid #222;
-  color: #555;
+  border: 1px solid #333;
+  color: #888;
 }
 #warn-cancel:hover { border-color: #333; color: #fff; }
 
@@ -226,19 +226,19 @@ h2 {
 button {
   flex: 1;
   padding: 10px;
-  border: 1px solid #1a1a1a;
+  border: 1px solid #2a2a2a;
   border-radius: 6px;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   background: transparent;
-  color: #555;
+  color: #888;
   transition: all 0.15s;
   letter-spacing: 0.02em;
 }
 
-button:hover { border-color: #333; color: #fff; }
+button:hover { border-color: #555; color: #fff; }
 
 #btn-dashboard {
   background: #fff;

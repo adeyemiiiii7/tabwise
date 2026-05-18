@@ -79,8 +79,11 @@ async function init() {
   }
   const uniqueRecords = Array.from(domainMap.values())
 
+  const todayStart = new Date(todayKey()).getTime()
+  const organisedToday = records.filter(r => r.lastVisited >= todayStart).length
+
   el('ov-time').textContent = fmt(totalToday)
-  el('ov-tabs').textContent = String(records.length)
+  el('ov-tabs').textContent = String(organisedToday)
   el('ov-top').textContent = topSite?.[0] ?? '—'
   el('ov-date').textContent = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',

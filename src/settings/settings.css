@@ -37,16 +37,16 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 nav a {
   padding: 8px 12px;
   border-radius: 6px;
-  color: #555;
+  color: #888;
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.01em;
   transition: all 0.15s;
 }
-nav a:hover { color: #fff; background: #111; }
-nav a.active { color: #fff; background: #111; }
-.nav-stats { margin-top: auto; color: #333 !important; font-size: 12px !important; }
+nav a:hover { color: #fff; background: #1a1a1a; }
+nav a.active { color: #fff; background: #1a1a1a; }
+.nav-stats { margin-top: auto; color: #666 !important; font-size: 12px !important; }
 
 main { flex: 1; padding: 48px 56px; max-width: 760px; }
 
@@ -88,7 +88,7 @@ section:last-child { border-bottom: none; }
 section h2 {
   font-size: 11px;
   font-weight: 600;
-  color: #444;
+  color: #777;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-bottom: 20px;
@@ -121,14 +121,14 @@ section h2 {
 }
 
 .provider-name { font-size: 14px; font-weight: 600; color: #fff; }
-.provider-model { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #444; }
+.provider-model { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #666; }
 
 .field { margin-bottom: 20px; }
 .field > label {
   display: block;
   font-size: 12px;
   font-weight: 500;
-  color: #555;
+  color: #888;
   margin-bottom: 8px;
   letter-spacing: 0.02em;
 }
@@ -166,7 +166,7 @@ button.secondary, button#test-btn {
 }
 button.secondary:hover, button#test-btn:hover { border-color: #444; color: #fff; }
 
-.hint { font-size: 12px; color: #444; margin-top: 6px; }
+.hint { font-size: 12px; color: #777; margin-top: 6px; }
 .hint.success { color: #5a9a5a; }
 .hint.error { color: #9a5a5a; }
 
@@ -179,7 +179,7 @@ button.secondary:hover, button#test-btn:hover { border-color: #444; color: #fff;
   margin-bottom: 20px;
 }
 .toggle-row strong { font-size: 14px; color: #fff; font-weight: 500; }
-.toggle-row p { font-size: 12px; color: #444; margin-top: 2px; }
+.toggle-row p { font-size: 12px; color: #777; margin-top: 2px; }
 
 .toggle { position: relative; }
 .toggle input { display: none; }
@@ -207,7 +207,7 @@ button.secondary:hover, button#test-btn:hover { border-color: #444; color: #fff;
 .toggle input:checked ~ .track { background: #fff; }
 .toggle input:checked ~ .track::after { left: 21px; background: #080808; }
 
-.section-hint { font-size: 12px; color: #333; margin-bottom: 16px; margin-top: -8px; }
+.section-hint { font-size: 12px; color: #666; margin-bottom: 16px; margin-top: -8px; }
 
 .category-row {
   display: flex;
@@ -222,7 +222,7 @@ button.secondary:hover, button#test-btn:hover { border-color: #444; color: #fff;
 .delete-cat {
   background: transparent;
   border: none;
-  color: #2a2a2a;
+  color: #555;
   font-size: 12px;
   cursor: pointer;
   padding: 4px 6px;
@@ -262,7 +262,7 @@ input[type="color"] {
 }
 .data-block:last-child { border-bottom: none; }
 .data-block-text strong { display: block; font-size: 14px; color: #fff; font-weight: 500; margin-bottom: 4px; }
-.data-block-text p { font-size: 12px; color: #333; line-height: 1.5; margin: 0; }
+.data-block-text p { font-size: 12px; color: #777; line-height: 1.5; margin: 0; }
 .data-block button { flex-shrink: 0; }
 .danger-block .data-block-text strong { color: #6a3030; }
 
