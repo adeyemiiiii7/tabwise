@@ -4,6 +4,11 @@
   "version": "1.0.0",
   "description": "AI-powered tab organizer with screen time tracking",
   "permissions": ["tabs", "tabGroups", "storage", "alarms", "notifications", "system.memory"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
