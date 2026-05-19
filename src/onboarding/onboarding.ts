@@ -2,7 +2,7 @@ import { getSettings, saveSettings } from '../lib/storage'
 import { AIProviderName, DEFAULT_CATEGORIES } from '../types'
 
 let selectedProvider: AIProviderName = 'openai'
-let currentStep = 1
+let usedApiKey = false
 
 function showStep(n: number) {
   document.querySelectorAll('.step').forEach((el, i) => {
@@ -11,7 +11,6 @@ function showStep(n: number) {
   document.querySelectorAll('.progress .dot').forEach((dot, i) => {
     dot.classList.toggle('active', i + 1 === n)
   })
-  currentStep = n
 }
 
 async function init() {
@@ -22,6 +21,7 @@ async function init() {
       document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
       selectedProvider = btn.dataset.provider as AIProviderName
+      document.getElementById('api-hint')!.textContent = hints[selectedProvider]
     })
   })
 
@@ -40,6 +40,12 @@ async function init() {
       return
     }
     await saveSettings({ ...settings, provider: selectedProvider, apiKey: key })
+    usedApiKey = true
+    showStep(3)
+  })
+
+  document.getElementById('step2-skip')!.addEventListener('click', () => {
+    usedApiKey = false
     showStep(3)
   })
 
@@ -54,7 +60,13 @@ async function init() {
     list.appendChild(chip)
   })
 
-  document.getElementById('step3-next')!.addEventListener('click', () => showStep(4))
+  document.getElementById('step3-next')!.addEventListener('click', () => {
+    const msg = document.getElementById('step4-msg')!
+    msg.textContent = usedApiKey
+      ? 'AI will categorise your tabs automatically as you browse. Open the popup anytime to see your screen time stats.'
+      : 'Tabwise will use smart pattern matching to organise your tabs. Add an AI key anytime in Settings for better accuracy on unfamiliar sites.'
+    showStep(4)
+  })
 
   document.getElementById('step4-finish')!.addEventListener('click', async () => {
     const current = await getSettings()

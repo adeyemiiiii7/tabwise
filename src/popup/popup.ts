@@ -44,18 +44,33 @@ async function renderStats() {
   const allDomains = new Set([...Object.keys(today), ...(live.domain ? [live.domain] : [])])
 
   const totalSeconds = Array.from(allDomains).reduce((sum, d) => sum + liveSeconds(d), 0)
+  const todayStart = new Date(todayKey()).getTime()
+  const organisedToday = records.filter(r => r.lastVisited >= todayStart).length
+
   el('time-today').textContent = fmt(totalSeconds)
-  el('tabs-organized').textContent = String(records.length)
+  el('tabs-organized').textContent = String(organisedToday)
 
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
     if (activeTab?.url?.startsWith('http')) {
       const domain = new URL(activeTab.url).hostname.replace(/^www\./, '')
-      const record = records.find(r => r.domain === domain)
+      if (activeTab.groupId != null && activeTab.groupId !== -1) {
+        try {
+          const group = await chrome.tabGroups.get(activeTab.groupId)
+          el('active-category').textContent = group.title ?? '—'
+        } catch {
+          const record = records.find(r => r.domain === domain)
+          el('active-category').textContent = record?.category ?? '—'
+        }
+      } else {
+        const record = records.find(r => r.domain === domain)
+        el('active-category').textContent = record?.category ?? '—'
+      }
+    } else if (live.domain) {
+      const record = records.find(r => r.domain === live.domain)
       el('active-category').textContent = record?.category ?? '—'
     } else {
-      const record = live.domain ? records.find(r => r.domain === live.domain) : null
-      el('active-category').textContent = record?.category ?? '—'
+      el('active-category').textContent = '—'
     }
   } catch {
     el('active-category').textContent = '—'
@@ -91,8 +106,23 @@ async function renderStats() {
 async function init() {
   const settings = await getSettings()
 
-  if (!settings.apiKey || !settings.onboardingComplete) {
-    document.querySelector('.dot')!.setAttribute('style', 'background:#333; box-shadow:none')
+  const badge = el('mode-badge')
+  const modeDesc = el('mode-desc')
+  const aiActive = settings.onboardingComplete && !!settings.apiKey && (settings.useAI ?? true)
+  if (!settings.onboardingComplete) {
+    badge.textContent = 'Setup needed'
+    badge.className = 'mode-badge mode-setup'
+    modeDesc.textContent = 'Complete onboarding to start using Tabwise'
+  } else if (!aiActive) {
+    badge.textContent = 'Auto mode'
+    badge.className = 'mode-badge mode-auto'
+    modeDesc.textContent = settings.apiKey
+      ? 'AI is off — using smart pattern matching. Toggle in Settings.'
+      : 'Using smart pattern matching. Add an AI key in Settings for better accuracy.'
+  } else {
+    badge.textContent = 'AI mode'
+    badge.className = 'mode-badge mode-ai'
+    modeDesc.textContent = `Tabs classified by ${settings.provider === 'claude' ? 'Claude' : settings.provider === 'gemini' ? 'Gemini' : 'OpenAI'}`
   }
 
   await renderStats()
@@ -144,9 +174,13 @@ async function init() {
   const overlay = el('warning-overlay')
   const reorgBtn = el('btn-reorganize') as HTMLButtonElement
 
+  if (!aiActive) {
+    el('warning-body').textContent = 'This will organize every open tab using smart pattern matching, replacing your current tab arrangement.'
+  }
+
   reorgBtn.addEventListener('click', () => {
-    if (!settings.apiKey || !settings.onboardingComplete) {
-      el('reorg-label').textContent = 'Set up API key in Settings first'
+    if (!settings.onboardingComplete) {
+      el('reorg-label').textContent = 'Complete setup first'
       setTimeout(() => { el('reorg-label').textContent = 'Reorganize all tabs' }, 2500)
       return
     }

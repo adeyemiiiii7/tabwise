@@ -1,4 +1,4 @@
-import { getSettings, getLearnedSites, saveLearnedSite } from '../lib/storage'
+import { getSettings, getLearnedSites, saveLearnedSite, saveSiteMemoryHint } from '../lib/storage'
 import { getProvider, QuotaExceededError } from '../lib/ai'
 import { isValidTab, tabToRecord, getDomain } from '../lib/tabs'
 import { moveTabToCategory, moveGroupToNewWindow, invalidateGroupCache, colorFromHex } from '../lib/groups'
@@ -62,7 +62,7 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
   } catch { return }
 
   const settings = await getSettings()
-  if (!settings.apiKey || !settings.onboardingComplete) return
+  if (!settings.onboardingComplete) return
 
   const domain = getDomain(url)
   const categoryNames = settings.categories.map(c => c.name)
@@ -72,6 +72,15 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
     const category = matchCategory(learned[domain], settings.categories)
     await moveTabToCategory(tab.id, tab.windowId, category)
     await updateRecord(tab, category.name)
+    return
+  }
+
+  if (!settings.apiKey || !(settings.useAI ?? true)) {
+    const result = offlineCategorize(url, title, categoryNames)
+    const category = matchCategory(result.category, settings.categories)
+    await moveTabToCategory(tab.id, tab.windowId, category)
+    await updateRecord(tab, category.name)
+    sendToast(tab.id, domain, category.name, categoryNames, result.confidence === 'high' ? 'confirm' : 'ask')
     return
   }
 
@@ -214,6 +223,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true
   }
 
+  if (message.type === 'PAGE_MEMORY_SIGNALS') {
+    saveSiteMemoryHint(message.domain, {
+      heapMB: message.heapMB,
+      hasVideo: message.hasVideo,
+      hasCanvas: message.hasCanvas,
+      recordedAt: Date.now(),
+    }).catch(() => {})
+    return false
+  }
+
   if (message.type === 'REASSIGN_TAB') {
     ;(async () => {
       try {
@@ -324,7 +343,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'REORGANIZE_ALL') {
     ;(async () => {
       const settings = await getSettings()
-      if (!settings.apiKey || !settings.onboardingComplete) {
+      if (!settings.onboardingComplete) {
         sendResponse({ success: false, count: 0 }); return
       }
       const tabs = await chrome.tabs.query({})
@@ -332,11 +351,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const categoryNames = settings.categories.map(c => c.name)
       const learned = await getLearnedSites()
       const quotaBlock = await getQuotaBlock()
-      const inQuotaMode = !!(quotaBlock && isQuotaBlockedToday(quotaBlock))
+      const inOfflineMode = !settings.apiKey || !(settings.useAI ?? true) || !!(quotaBlock && isQuotaBlockedToday(quotaBlock))
 
       let ragContext: Awaited<ReturnType<typeof buildRAGContext>> | null = null
-      let provider = inQuotaMode ? null : getProvider(settings.provider, settings.apiKey)
-      if (!inQuotaMode) ragContext = await getRAGContext(settings)
+      let provider = inOfflineMode ? null : getProvider(settings.provider, settings.apiKey)
+      if (!inOfflineMode) ragContext = await getRAGContext(settings)
 
       let count = 0
       const records = await getTabRecords()
@@ -349,7 +368,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
           if (learned[domain] && categoryNames.includes(learned[domain])) {
             categoryName = learned[domain]
-          } else if (inQuotaMode) {
+          } else if (inOfflineMode) {
             const result = offlineCategorize(tab.url!, tab.title ?? '', categoryNames)
             categoryName = result.category
           } else {

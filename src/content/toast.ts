@@ -280,3 +280,28 @@ try {
 } catch {
   // Extension reloaded — content script replaced on next navigation
 }
+
+// ── Memory signal collection ───────────────────────────────
+// Reads JS heap + page content signals after the page has settled and reports
+// them to the background for use as per-domain memory estimates. Runs only on
+// top-level frames, skips internal Chrome pages.
+setTimeout(() => {
+  if (!isContextValid()) return
+  const domain = location.hostname.replace(/^www\./, '')
+  if (!domain || window !== window.top) return
+
+  const mem = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory
+  const heapMB    = mem ? Math.round(mem.usedJSHeapSize / 1024 / 1024) : 0
+  const hasVideo  = document.querySelectorAll('video').length > 0
+  const hasCanvas = document.querySelectorAll('canvas').length > 0
+
+  try {
+    chrome.runtime.sendMessage({
+      type: 'PAGE_MEMORY_SIGNALS',
+      domain,
+      heapMB,
+      hasVideo,
+      hasCanvas,
+    })
+  } catch { /* context invalidated mid-call */ }
+}, 2000)

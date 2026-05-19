@@ -14,11 +14,11 @@
     <aside class="sidebar">
       <div class="logo">TW<span class="dot">.</span></div>
       <nav>
-        <a href="#" data-view="overview" class="active">Overview</a>
-        <a href="#" data-view="sites">Sites</a>
-        <a href="#" data-view="categories">Categories</a>
-        <a href="#" data-view="resources">Resources</a>
-        <a href="#" data-view="settings">Settings</a>
+        <a href="#" data-view="overview" class="active"><span class="nav-icon">◈</span>Overview</a>
+        <a href="#" data-view="sites"><span class="nav-icon">⊞</span>Sites</a>
+        <a href="#" data-view="categories"><span class="nav-icon">◉</span>Categories</a>
+        <a href="#" data-view="resources"><span class="nav-icon">▣</span>Resources</a>
+        <a href="#" data-view="settings"><span class="nav-icon">⊙</span>Settings</a>
       </nav>
       <div class="sidebar-bottom">
         <button class="theme-btn" id="theme-toggle">
@@ -90,39 +90,46 @@
       <!-- ── RESOURCES ─────────────────────────────────────── -->
       <div id="view-resources" class="view" style="display:none">
         <header>
-          <h1>Browser Resources</h1>
+          <h1>Resources</h1>
           <button id="res-refresh-btn" class="secondary">Refresh</button>
         </header>
 
         <div class="stat-grid" id="res-stat-grid"></div>
 
-        <div class="res-pressure-bar-wrap" id="res-pressure-wrap" style="margin-bottom:20px;display:none">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;font-family:'JetBrains Mono',monospace" id="res-pressure-label"></div>
-          <div style="height:6px;border-radius:4px;background:var(--border);overflow:hidden">
-            <div id="res-pressure-bar" style="height:100%;border-radius:4px;transition:width 0.4s"></div>
+        <div class="res-pressure-wrap" id="res-pressure-wrap" style="display:none">
+          <div class="res-pressure-header">
+            <span class="res-pressure-label" id="res-pressure-label"></span>
+            <span class="res-pressure-pct" id="res-pressure-pct"></span>
           </div>
+          <div class="res-pressure-track">
+            <div id="res-pressure-bar" class="res-pressure-fill"></div>
+          </div>
+          <p class="res-pressure-hint" id="res-pressure-hint"></p>
         </div>
 
-        <div class="table-box" style="margin-bottom:16px">
-          <div class="table-label">Open tabs — memory impact</div>
+        <div class="table-box res-table-box">
+          <div class="res-table-header">
+            <div class="table-label">Open tabs — estimated memory</div>
+            <div id="res-actions" class="res-actions"></div>
+          </div>
           <table>
-            <thead><tr><th>Tab</th><th>Category</th><th>Impact</th><th>Last visited</th></tr></thead>
+            <thead><tr><th>Tab</th><th>Category</th><th>Est. memory</th><th>Last active</th><th></th></tr></thead>
             <tbody id="res-tabs-body"></tbody>
           </table>
-          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" id="res-actions"></div>
         </div>
 
         <div class="table-box">
-          <div class="table-label">Inactive tabs (not visited in 1+ hour)</div>
+          <div class="table-label">Inactive tabs — not visited in 1+ hour</div>
+          <p class="res-section-hint">These tabs are still loaded in memory but haven't been used recently. Closing them frees RAM immediately.</p>
           <table>
             <thead><tr><th>Tab</th><th>Category</th><th>Idle for</th><th></th></tr></thead>
             <tbody id="res-inactive-body"></tbody>
           </table>
-          <div style="margin-top:10px" id="res-inactive-actions"></div>
+          <div class="res-inactive-actions" id="res-inactive-actions"></div>
         </div>
 
-        <p style="font-size:10px;color:var(--text-low);margin-top:16px;font-family:'JetBrains Mono',monospace">
-          Browser RAM is estimated from open tab count — ~110 MB per normal tab, ~300 MB for video/design/IDE tabs, plus ~250 MB browser overhead. Available RAM is read from your OS and is accurate on Mac and Windows.
+        <p class="res-footnote">
+          Per-tab memory is read from Chrome's process data when available (no tilde = real value). Falls back to category averages (~110 MB normal · ~300 MB video/design) when unavailable. System RAM and browser base overhead (~250 MB) are always accurate.
         </p>
       </div>
 
@@ -134,7 +141,18 @@
         </header>
 
         <section>
-          <h2>AI Provider</h2>
+          <h2>AI Provider <span class="optional-badge">optional</span></h2>
+          <div class="toggle-row" style="margin-bottom:20px">
+            <div>
+              <strong>Use AI categorization</strong>
+              <p>Turn off to use smart pattern matching without consuming API credits</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="use-ai" />
+              <span class="track"></span>
+            </label>
+          </div>
+          <div id="ai-provider-fields">
           <div class="provider-grid">
             <label class="provider-card">
               <input type="radio" name="provider" value="openai" />
@@ -167,6 +185,7 @@
             </div>
             <div class="hint" id="test-result"></div>
           </div>
+          </div><!-- #ai-provider-fields -->
         </section>
 
         <section>

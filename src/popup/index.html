@@ -12,8 +12,9 @@
 <body>
   <div class="header">
     <h1>Tabwise</h1>
-    <span id="status-dot" class="dot"></span>
+    <span id="mode-badge" class="mode-badge"></span>
   </div>
+  <p id="mode-desc" class="mode-desc"></p>
 
   <div class="stat-row">
     <div class="stat">
@@ -50,7 +51,7 @@
   <div id="warning-overlay" class="hidden">
     <div class="warning-box">
       <p class="warning-title">Reorganize all tabs?</p>
-      <p class="warning-body">This will move every open tab into AI-assigned groups, destroying your current tab arrangement.</p>
+      <p id="warning-body" class="warning-body">This will move every open tab into AI-assigned groups, destroying your current tab arrangement.</p>
       <div class="warning-actions">
         <button id="warn-cancel">Cancel</button>
         <button id="warn-confirm">Yes, reorganize</button>

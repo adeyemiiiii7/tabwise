@@ -32,11 +32,13 @@
     </div>
 
     <div class="step hidden" id="step-2">
-      <h2>Paste your API key</h2>
+      <h2>Paste your API key <span class="optional-tag">optional</span></h2>
       <p id="api-hint">Your key is stored only in your browser and never leaves your device.</p>
+      <p class="api-optional-note">No key? Tabwise still works — it uses smart pattern matching to organise your tabs. You can add a key later in Settings for better accuracy on unusual sites.</p>
       <input type="password" id="api-key-input" placeholder="sk-..." />
       <p id="key-error" class="error hidden">Please enter an API key</p>
       <button class="btn-next" id="step2-next">Next →</button>
+      <button class="btn-skip" id="step2-skip">Skip — use without AI →</button>
     </div>
 
     <div class="step hidden" id="step-3">
@@ -48,7 +50,7 @@
 
     <div class="step hidden" id="step-4">
       <h2>You're all set!</h2>
-      <p>Tabwise will now organize your tabs automatically. Open the popup anytime to see your screen time stats.</p>
+      <p id="step4-msg">Tabwise will now organize your tabs automatically. Open the popup anytime to see your screen time stats.</p>
       <button class="btn-next" id="step4-finish">Start using Tabwise</button>
     </div>
 

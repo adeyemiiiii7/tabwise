@@ -94,6 +94,20 @@ section h2 {
   margin-bottom: 20px;
 }
 
+.optional-badge {
+  font-size: 9px;
+  font-weight: 500;
+  color: #444;
+  background: #0f0f0f;
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  padding: 2px 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
 .provider-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -281,3 +295,39 @@ button.danger {
   transition: all 0.15s;
 }
 button.danger:hover { border-color: #5a2020; color: #c04040; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-box {
+  background: #141414;
+  border: 1px solid #222;
+  border-radius: 10px;
+  padding: 24px 24px 20px;
+  max-width: 380px;
+  width: calc(100% - 40px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e8e8e8;
+  margin-bottom: 8px;
+}
+.modal-msg {
+  font-size: 13px;
+  color: #888;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

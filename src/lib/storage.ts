@@ -41,6 +41,23 @@ export async function clearAllData(): Promise<void> {
   await chrome.storage.local.clear()
 }
 
+export interface SiteMemoryHint {
+  heapMB: number
+  hasVideo: boolean
+  hasCanvas: boolean
+  recordedAt: number
+}
+
+export async function getSiteMemoryHints(): Promise<Record<string, SiteMemoryHint>> {
+  const result = await chrome.storage.local.get('siteMemoryHints')
+  return (result.siteMemoryHints as Record<string, SiteMemoryHint> | undefined) ?? {}
+}
+
+export async function saveSiteMemoryHint(domain: string, hint: SiteMemoryHint): Promise<void> {
+  const current = await getSiteMemoryHints()
+  await chrome.storage.local.set({ siteMemoryHints: { ...current, [domain]: hint } })
+}
+
 export interface QuotaBlock {
   provider: string
   blockedAt: number

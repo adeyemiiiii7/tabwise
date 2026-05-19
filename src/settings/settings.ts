@@ -10,20 +10,45 @@ function randomId(): string {
   return Math.random().toString(36).slice(2, 8)
 }
 
+function askConfirm({ title, message, confirmLabel = 'Confirm', danger = false }: {
+  title: string
+  message: string
+  confirmLabel?: string
+  danger?: boolean
+}): Promise<boolean> {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <h3 class="modal-title">${title}</h3>
+        <p class="modal-msg">${message}</p>
+        <div class="modal-actions">
+          <button class="modal-cancel secondary">Cancel</button>
+          <button class="modal-confirm${danger ? ' danger' : ''}">${confirmLabel}</button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+    const close = (result: boolean) => { overlay.remove(); resolve(result) }
+    overlay.querySelector('.modal-cancel')!.addEventListener('click', () => close(false))
+    overlay.querySelector('.modal-confirm')!.addEventListener('click', () => close(true))
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(false) })
+  })
+}
+
 async function init() {
   const settings = await getSettings()
   let categories: Category[] = [...settings.categories]
 
-  // Provider
   document.querySelectorAll<HTMLInputElement>('input[name="provider"]').forEach(r => {
     if (r.value === settings.provider) r.checked = true
   })
 
-  // API key
   const apiKeyInput = document.getElementById('api-key') as HTMLInputElement
   apiKeyInput.value = settings.apiKey
 
-  // Test — use the currently selected provider, not the saved one
+  // Test uses the currently selected provider, not the saved one
   document.getElementById('test-btn')!.addEventListener('click', async () => {
     const result = document.getElementById('test-result')!
     const key = apiKeyInput.value.trim()
@@ -41,15 +66,12 @@ async function init() {
     }
   })
 
-  // Auto mode
   const autoToggle = document.getElementById('auto-mode') as HTMLInputElement
   autoToggle.checked = settings.autoMode
 
-  // Inactivity
   const inactivityInput = document.getElementById('inactivity') as HTMLInputElement
   inactivityInput.value = String(settings.inactivityThresholdHours)
 
-  // Render categories
   function renderCategories() {
     const catList = document.getElementById('categories-list')!
     catList.innerHTML = ''
@@ -72,9 +94,14 @@ async function init() {
     })
 
     catList.querySelectorAll<HTMLButtonElement>('.delete-cat').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const idx = Number(btn.dataset.index)
         if (categories.length <= 1) return
+        if (!await askConfirm({
+          title: 'Delete category?',
+          message: `Delete "${categories[idx].name}"? Tabs assigned to it will become uncategorized.`,
+          confirmLabel: 'Delete',
+        })) return
         categories.splice(idx, 1)
         renderCategories()
       })
@@ -83,7 +110,6 @@ async function init() {
 
   renderCategories()
 
-  // Add category
   document.getElementById('add-cat-btn')!.addEventListener('click', () => {
     const nameInput = document.getElementById('new-cat-name') as HTMLInputElement
     const colorInput = document.getElementById('new-cat-color') as HTMLInputElement
@@ -95,7 +121,7 @@ async function init() {
     renderCategories()
   })
 
-  // Save — also marks onboardingComplete so the background worker starts organizing
+  // Also sets onboardingComplete so the background worker starts organizing on first save
   document.getElementById('save-btn')!.addEventListener('click', async () => {
     await saveSettings({
       ...settings,
@@ -111,18 +137,20 @@ async function init() {
     setTimeout(() => { btn.textContent = 'Save changes' }, 2000)
   })
 
-  // Clear algorithm cache (learned sites only — keeps screen time & settings)
+  // Removes learned sites only — screen time and settings are preserved
   document.getElementById('clear-cache-btn')!.addEventListener('click', async () => {
-    if (!confirm('This clears your saved site preferences. Tabwise will ask where each site belongs again and relearn from your answers. Screen time data is kept.\n\nContinue?')) return
+    if (!await askConfirm({
+      title: 'Reset algorithm?',
+      message: 'Clears saved site picks and API stats. Tabwise will re-ask and relearn from your answers. Screen time is kept.',
+      confirmLabel: 'Reset',
+    })) return
     await chrome.storage.local.remove(['learnedSites', 'apiUsage'])
-    // Tell background to drop its in-memory RAG cache too
-    chrome.runtime.sendMessage({ type: 'INVALIDATE_CACHE' })
+    chrome.runtime.sendMessage({ type: 'INVALIDATE_CACHE' }) // drop background's in-memory RAG cache
     const btn = document.getElementById('clear-cache-btn')!
     btn.textContent = 'Algorithm reset!'
     setTimeout(() => { btn.textContent = 'Reset algorithm' }, 2500)
   })
 
-  // Export CSV
   document.getElementById('export-btn')!.addEventListener('click', async () => {
     const screentime = await getScreenTime()
     const rows = ['Date,Domain,Seconds']
@@ -138,18 +166,20 @@ async function init() {
     a.click()
   })
 
-  // Stats link
   document.getElementById('nav-stats')!.addEventListener('click', e => {
     e.preventDefault()
     chrome.tabs.create({ url: chrome.runtime.getURL('src/dashboard/index.html') })
   })
 
-  // Reset
   document.getElementById('reset-btn')!.addEventListener('click', async () => {
-    if (confirm('This will delete all your screen time data and settings. Continue?')) {
-      await clearAllData()
-      location.reload()
-    }
+    if (!await askConfirm({
+      title: 'Delete all data?',
+      message: 'Removes all settings, categories, and screen time. This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })) return
+    await clearAllData()
+    location.reload()
   })
 }
 

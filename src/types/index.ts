@@ -19,7 +19,7 @@ export interface TabRecord {
 }
 
 export interface ScreenTimeEntry {
-  [domain: string]: number // seconds
+  [domain: string]: number
 }
 
 export interface ScreenTimeData {
@@ -29,6 +29,7 @@ export interface ScreenTimeData {
 export interface Settings {
   provider: AIProviderName
   apiKey: string
+  useAI: boolean
   categories: Category[]
   autoMode: boolean
   inactivityThresholdHours: number
@@ -51,6 +52,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
 export const DEFAULT_SETTINGS: Settings = {
   provider: 'openai',
   apiKey: '',
+  useAI: true,
   categories: DEFAULT_CATEGORIES,
   autoMode: false,
   inactivityThresholdHours: 24,

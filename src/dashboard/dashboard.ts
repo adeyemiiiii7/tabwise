@@ -1,9 +1,43 @@
 import { Chart, registerables } from 'chart.js'
-import { getScreenTime, getTabRecords, getSettings, saveSettings, clearAllData, getQuotaBlock, clearQuotaBlock, isQuotaBlockedToday } from '../lib/storage'
+import { getScreenTime, getTabRecords, getSettings, saveSettings, clearAllData, getQuotaBlock, clearQuotaBlock, isQuotaBlockedToday, getSiteMemoryHints, SiteMemoryHint } from '../lib/storage'
 import { getProvider } from '../lib/ai'
 import { AIProviderName, Category } from '../types'
 
 Chart.register(...registerables)
+
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+function askConfirm({ title, message, confirmLabel = 'Confirm', danger = false }: {
+  title: string
+  message: string
+  confirmLabel?: string
+  danger?: boolean
+}): Promise<boolean> {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <h3 class="modal-title">${title}</h3>
+        <p class="modal-msg">${message}</p>
+        <div class="modal-actions">
+          <button class="modal-cancel secondary">Cancel</button>
+          <button class="modal-confirm${danger ? ' danger' : ''}">${confirmLabel}</button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+    const close = (result: boolean) => { overlay.remove(); resolve(result) }
+    overlay.querySelector('.modal-cancel')!.addEventListener('click', () => close(false))
+    overlay.querySelector('.modal-confirm')!.addEventListener('click', () => close(true))
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(false) })
+  })
+}
+
+let weekChart: Chart | null = null
+let catChart: Chart | null = null
 
 function fmt(s: number): string {
   if (s < 60) return `${s}s`
@@ -29,6 +63,23 @@ function applyTheme(light: boolean) {
   el('theme-icon').textContent = light ? '●' : '○'
   el('theme-label').textContent = light ? 'Dark mode' : 'Light mode'
   localStorage.setItem('tw-theme', light ? 'light' : 'dark')
+
+  const textDim = cssVar('--text-dim')
+  const border  = cssVar('--border')
+
+  if (weekChart) {
+    const lo = weekChart.options
+    lo.plugins!.legend!.labels!.color = textDim
+    ;(lo.scales!.x as any).ticks.color = textDim
+    ;(lo.scales!.x as any).grid.color  = border
+    ;(lo.scales!.y as any).ticks.color = textDim
+    ;(lo.scales!.y as any).grid.color  = border
+    weekChart.update()
+  }
+  if (catChart) {
+    catChart.options.plugins!.legend!.labels!.color = textDim
+    catChart.update()
+  }
 }
 
 const savedTheme = localStorage.getItem('tw-theme')
@@ -109,7 +160,8 @@ async function init() {
 
   const weekTotals = days.map(d => Object.values(screentime[d] ?? {}).reduce((a, b) => a + b, 0))
 
-  new Chart(el('week-chart') as HTMLCanvasElement, {
+  if (weekChart) weekChart.destroy()
+  weekChart = new Chart(el('week-chart') as HTMLCanvasElement, {
     type: 'bar',
     data: { labels: dayLabels, datasets: catDatasets },
     options: {
@@ -117,7 +169,7 @@ async function init() {
         legend: {
           display: true,
           labels: {
-            color: 'var(--text-dim)',
+            color: cssVar('--text-dim'),
             font: { family: 'Space Grotesk', size: 10 },
             boxWidth: 8,
             boxHeight: 8,
@@ -139,13 +191,13 @@ async function init() {
       scales: {
         x: {
           stacked: true,
-          grid: { color: 'var(--border)' },
-          ticks: { color: 'var(--text-dim)', font: { family: 'JetBrains Mono', size: 10 } },
+          grid: { color: cssVar('--border') },
+          ticks: { color: cssVar('--text-dim'), font: { family: 'JetBrains Mono', size: 10 } },
         },
         y: {
           stacked: true,
-          grid: { color: 'var(--border)' },
-          ticks: { color: 'var(--text-dim)', font: { family: 'JetBrains Mono', size: 10 }, callback: v => `${v}m` },
+          grid: { color: cssVar('--border') },
+          ticks: { color: cssVar('--text-dim'), font: { family: 'JetBrains Mono', size: 10 }, callback: v => `${v}m` },
         },
       },
     },
@@ -160,7 +212,8 @@ async function init() {
   const catValues = catLabels.map(name => categorySeconds[name] ?? 0)
   const catBg = catLabels.map(name => catColors[name] ?? '#333')
 
-  new Chart(el('cat-chart') as HTMLCanvasElement, {
+  if (catChart) catChart.destroy()
+  catChart = new Chart(el('cat-chart') as HTMLCanvasElement, {
     type: 'doughnut',
     data: {
       labels: catLabels,
@@ -168,7 +221,7 @@ async function init() {
     },
     options: {
       plugins: {
-        legend: { labels: { color: 'var(--text-dim)', font: { size: 11, family: 'Space Grotesk' }, boxWidth: 8 } },
+        legend: { labels: { color: cssVar('--text-dim'), font: { size: 11, family: 'Space Grotesk' }, boxWidth: 8 } },
         tooltip: { callbacks: { label: ctx => `${ctx.label}: ${fmt(catValues[ctx.dataIndex])}` } },
       },
       cutout: '68%',
@@ -333,6 +386,18 @@ async function init() {
     if (r.value === settings.provider) r.checked = true
   })
 
+  const useAIToggle = el('use-ai') as HTMLInputElement
+  const aiProviderFields = el('ai-provider-fields')
+
+  useAIToggle.checked = settings.useAI ?? true
+
+  function syncAIFieldsVisibility() {
+    aiProviderFields.style.opacity = useAIToggle.checked ? '1' : '0.35'
+    aiProviderFields.style.pointerEvents = useAIToggle.checked ? '' : 'none'
+  }
+  syncAIFieldsVisibility()
+  useAIToggle.addEventListener('change', syncAIFieldsVisibility)
+
   const apiKeyInput = el('api-key') as HTMLInputElement
   apiKeyInput.value = settings.apiKey
 
@@ -386,9 +451,15 @@ async function init() {
       })
     })
     catList.querySelectorAll<HTMLButtonElement>('.delete-cat').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
+        const idx = Number(btn.dataset.index)
         if (categories.length <= 1) return
-        categories.splice(Number(btn.dataset.index), 1)
+        if (!await askConfirm({
+          title: 'Delete category?',
+          message: `Delete "${categories[idx].name}"? Tabs assigned to it will become uncategorized.`,
+          confirmLabel: 'Delete',
+        })) return
+        categories.splice(idx, 1)
         renderCategories()
       })
     })
@@ -415,6 +486,7 @@ async function init() {
       ...settings,
       provider,
       apiKey: apiKeyInput.value.trim(),
+      useAI: useAIToggle.checked,
       autoMode: autoToggle.checked,
       inactivityThresholdHours: Number(inactivityInput.value),
       categories,
@@ -437,7 +509,11 @@ async function init() {
   })
 
   el('clear-cache-btn').addEventListener('click', async () => {
-    if (!confirm('Clear saved site picks and API stats? Screen time is kept.')) return
+    if (!await askConfirm({
+      title: 'Reset algorithm?',
+      message: 'Clears saved site picks and API stats. Screen time is kept.',
+      confirmLabel: 'Reset',
+    })) return
     await chrome.storage.local.remove(['learnedSites', 'apiUsage'])
     chrome.runtime.sendMessage({ type: 'INVALIDATE_CACHE' })
     const btn = el('clear-cache-btn')
@@ -461,17 +537,21 @@ async function init() {
   })
 
   el('reset-btn').addEventListener('click', async () => {
-    if (confirm('Delete ALL data including settings and screen time? Cannot be undone.')) {
-      await clearAllData()
-      location.reload()
-    }
+    if (!await askConfirm({
+      title: 'Delete all data?',
+      message: 'Removes all settings, categories, and screen time. This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })) return
+    await clearAllData()
+    location.reload()
   })
 }
 
 init()
 
 async function refreshScreenTime() {
-  const [st, settings] = await Promise.all([getScreenTime(), getSettings()])
+  const [st] = await Promise.all([getScreenTime(), getSettings()])
   const today = st[todayKey()] ?? {}
 
   let liveAdd = 0
@@ -509,7 +589,6 @@ async function refreshScreenTime() {
     })
   }
 
-  // Update time values in the sites list
   document.querySelectorAll<HTMLElement>('.site-row').forEach(row => {
     const nameEl = row.querySelector<HTMLElement>('.site-name')
     const timeEl = row.querySelector<HTMLElement>('.site-time')
@@ -540,29 +619,118 @@ async function refreshScreenTime() {
 
 setInterval(refreshScreenTime, 10_000)
 
-const HEAVY_SITES: Record<string, string> = {
+// Badge labels — shown as a tag on tabs with noticeably high footprint
+const SITE_LABELS: Record<string, string> = {
   'youtube.com': 'video streaming',
   'netflix.com': 'video streaming',
   'twitch.tv': 'live video',
   'hulu.com': 'video streaming',
   'disneyplus.com': 'video streaming',
   'primevideo.com': 'video streaming',
+  'vimeo.com': 'video',
+  'dailymotion.com': 'video',
   'meet.google.com': 'video call',
   'zoom.us': 'video call',
   'teams.microsoft.com': 'video call',
   'webex.com': 'video call',
+  'discord.com': 'voice/video',
   'figma.com': 'design canvas',
   'canva.com': 'design canvas',
+  'miro.com': 'whiteboard',
   'codesandbox.io': 'live IDE',
   'replit.com': 'live IDE',
+  'stackblitz.com': 'live IDE',
   'notion.so': 'rich editor',
-  'miro.com': 'whiteboard',
+  'slack.com': 'messaging app',
   'gmail.com': 'mail app',
   'mail.google.com': 'mail app',
   'docs.google.com': 'doc editor',
   'sheets.google.com': 'spreadsheet',
+  'maps.google.com': 'maps',
+  'tradingview.com': 'live charts',
   'coinbase.com': 'live data',
   'robinhood.com': 'live data',
+  'binance.com': 'live data',
+  'tiktok.com': 'video feed',
+  'facebook.com': 'social app',
+}
+
+// Per-domain memory estimates in MB — used as fallback when chrome.processes data is unavailable.
+// Values based on Chrome Task Manager measurements across typical usage sessions.
+const SITE_MEMORY_MB: Record<string, number> = {
+  // Video streaming
+  'youtube.com': 350,
+  'netflix.com': 300,
+  'twitch.tv': 420,
+  'hulu.com': 280,
+  'disneyplus.com': 280,
+  'primevideo.com': 280,
+  'vimeo.com': 220,
+  'dailymotion.com': 200,
+  // Video / audio calls
+  'meet.google.com': 280,
+  'zoom.us': 220,
+  'teams.microsoft.com': 380,
+  'webex.com': 250,
+  'discord.com': 270,
+  // Design & creative
+  'figma.com': 520,
+  'canva.com': 320,
+  'miro.com': 380,
+  // Development
+  'codesandbox.io': 350,
+  'replit.com': 300,
+  'stackblitz.com': 280,
+  'codepen.io': 180,
+  'github.com': 130,
+  'gitlab.com': 130,
+  'bitbucket.org': 120,
+  // Google Workspace
+  'mail.google.com': 170,
+  'gmail.com': 170,
+  'docs.google.com': 160,
+  'sheets.google.com': 190,
+  'slides.google.com': 170,
+  'drive.google.com': 130,
+  'calendar.google.com': 120,
+  'maps.google.com': 200,
+  'google.com': 90,
+  // Productivity & project tools
+  'notion.so': 210,
+  'slack.com': 320,
+  'linear.app': 160,
+  'airtable.com': 200,
+  'monday.com': 180,
+  'asana.com': 160,
+  'trello.com': 140,
+  'jira.atlassian.com': 180,
+  'confluence.atlassian.com': 170,
+  // Social media
+  'twitter.com': 160,
+  'x.com': 160,
+  'facebook.com': 220,
+  'instagram.com': 190,
+  'reddit.com': 140,
+  'linkedin.com': 170,
+  'tiktok.com': 250,
+  // Finance / live data
+  'coinbase.com': 210,
+  'robinhood.com': 210,
+  'binance.com': 220,
+  'tradingview.com': 300,
+  // Shopping
+  'amazon.com': 150,
+  'ebay.com': 130,
+  // Communication
+  'web.whatsapp.com': 150,
+  'web.telegram.org': 130,
+  // Content / news
+  'medium.com': 110,
+  'substack.com': 100,
+  'wikipedia.org': 70,
+  'nytimes.com': 140,
+  'bbc.com': 120,
+  'theguardian.com': 120,
 }
 
 function relativeTime(ms: number): string {
@@ -573,102 +741,135 @@ function relativeTime(ms: number): string {
   return `${Math.floor(s / 86400)}d ago`
 }
 
-function memImpact(domain: string, isHeavy: boolean): { label: string; color: string } {
-  if (isHeavy) return { label: '⬤ High', color: '#ff6b00' }
-  return { label: '◉ Normal', color: 'var(--text-dim)' }
+
+interface ChromeProcessInfo {
+  type: string
+  tabs?: number[]
+  privateMemory?: number
+}
+
+async function getTabMemoryMap(tabIds: Set<number>): Promise<Map<number, number>> {
+  type ProcessesAPI = {
+    getProcessInfo(
+      ids: number[],
+      mem: boolean,
+      cb: (procs: Record<number, ChromeProcessInfo>) => void
+    ): void
+  }
+  const api = (chrome as unknown as { processes?: ProcessesAPI }).processes
+  if (!api) return new Map()
+  return new Promise(resolve => {
+    try {
+      api.getProcessInfo([], true, procs => {
+        const map = new Map<number, number>()
+        Object.values(procs).forEach(proc => {
+          if (proc.type !== 'renderer' || !proc.tabs?.length || proc.privateMemory == null) return
+          const mbPerTab = Math.round(proc.privateMemory / proc.tabs.length / 1024 / 1024)
+          proc.tabs.forEach(id => { if (tabIds.has(id)) map.set(id, mbPerTab) })
+        })
+        resolve(map)
+      })
+    } catch {
+      resolve(new Map())
+    }
+  })
+}
+
+function estimateFromHint(hint: SiteMemoryHint): number {
+  if (hint.hasVideo)          return 300
+  if (hint.hasCanvas)         return 350
+  if (hint.heapMB > 150)      return Math.round(hint.heapMB * 1.8)
+  if (hint.heapMB > 80)       return Math.round(hint.heapMB * 2.2)
+  if (hint.heapMB > 30)       return Math.round(hint.heapMB * 2.5)
+  return Math.max(80, Math.round(hint.heapMB * 3))
 }
 
 async function renderResources() {
-  const [tabs, tabRecords, settings] = await Promise.all([
+  const [tabs, tabRecords, settings, siteMemoryHints] = await Promise.all([
     chrome.tabs.query({}),
     getTabRecords(),
     getSettings(),
+    getSiteMemoryHints(),
   ])
 
   const validTabs = tabs.filter(t => t.url?.startsWith('http') && t.id)
   const grid = el('res-stat-grid')
   grid.innerHTML = ''
 
-  // Heavy sites ≈ 300 MB each; normal tabs ≈ 110 MB each; + 250 MB browser overhead.
   const BROWSER_OVERHEAD_MB = 250
-  const HEAVY_MB = 300
-  const NORMAL_MB = 110
-  let estimatedBrowserMB = BROWSER_OVERHEAD_MB
-  validTabs.forEach(t => {
-    const domain = t.url ? new URL(t.url).hostname.replace(/^www\./, '') : ''
-    estimatedBrowserMB += HEAVY_SITES[domain] ? HEAVY_MB : NORMAL_MB
-  })
-  const heavyCount = validTabs.filter(t => {
+  const DEFAULT_TAB_MB = 120
+
+  const tabIds = new Set(validTabs.map(t => t.id!))
+  const tabMemoryMap = await getTabMemoryMap(tabIds)
+  const hasRealMemory = tabMemoryMap.size > 0
+
+  function tabMemMB(tabId: number, domain: string): { mb: number; real: boolean } {
+    const real = tabMemoryMap.get(tabId)
+    if (real !== undefined) return { mb: real, real: true }
+    if (SITE_MEMORY_MB[domain]) return { mb: SITE_MEMORY_MB[domain], real: false }
+    const hint = siteMemoryHints[domain]
+    if (hint) return { mb: estimateFromHint(hint), real: false }
+    return { mb: DEFAULT_TAB_MB, real: false }
+  }
+
+  const heavyTabs = validTabs.filter(t => {
     const d = t.url ? new URL(t.url).hostname.replace(/^www\./, '') : ''
-    return !!HEAVY_SITES[d]
-  }).length
+    return !!SITE_LABELS[d]
+  })
+  const heavyCount = heavyTabs.length
+
+  const totalBrowserMB = BROWSER_OVERHEAD_MB + validTabs.reduce((sum, t) => {
+    const d = t.url ? new URL(t.url).hostname.replace(/^www\./, '') : ''
+    return sum + tabMemMB(t.id!, d).mb
+  }, 0)
+  const browserGB = (totalBrowserMB / 1024).toFixed(1)
+
+  function makeStatCard(val: string, sub: string, label: string) {
+    const card = document.createElement('div')
+    card.className = 'stat-card'
+    card.innerHTML = `
+      <div class="stat-val">${val}</div>
+      <div class="res-stat-sub">${sub}</div>
+      <div class="stat-label">${label}</div>
+    `
+    return card
+  }
+
+  const browserRAMLabel = hasRealMemory ? `${browserGB} GB` : `~${browserGB} GB`
+  const browserRAMSub   = hasRealMemory ? `${validTabs.length} tabs · from Chrome process data` : `${validTabs.length} tabs · estimated`
 
   await new Promise<void>(resolve => {
     try {
       chrome.system.memory.getInfo(info => {
-        const freeBytes = info.availableCapacity
-        const totalGB = (info.capacity / 1024 ** 3).toFixed(1)
-        const freeGB = (freeBytes / 1024 ** 3).toFixed(1)
-        const browserGB = (estimatedBrowserMB / 1024).toFixed(1)
+        const totalGB     = (info.capacity / 1024 ** 3).toFixed(1)
+        const freeGB      = (info.availableCapacity / 1024 ** 3).toFixed(1)
+        const pressurePct = Math.min(100, Math.round(totalBrowserMB / (info.capacity / 1024 / 1024) * 100))
+        const pressureColor  = pressurePct >= 60 ? '#ff4444' : pressurePct >= 40 ? '#ff9a3c' : '#7ed321'
+        const pressureStatus = pressurePct >= 60 ? 'High — close heavy or idle tabs' : pressurePct >= 40 ? 'Moderate — keep an eye on heavy tabs' : 'Healthy'
 
-        const pressurePct = Math.min(100, Math.round(estimatedBrowserMB / (info.capacity / 1024 ** 3 * 1024) * 100))
-        const pressureColor = pressurePct >= 60 ? '#ff4444' : pressurePct >= 40 ? '#ff9a3c' : '#7ed321'
-
-        const cards = [
-          {
-            val: `~${browserGB} GB`,
-            sub: `estimated browser usage`,
-            label: 'Browser RAM',
-          },
-          {
-            val: `${freeGB} GB`,
-            sub: `free of ${totalGB} GB total`,
-            label: 'Available RAM',
-          },
-          {
-            val: `${validTabs.length}`,
-            sub: heavyCount > 0 ? `${heavyCount} heavy tab${heavyCount > 1 ? 's' : ''} detected` : 'no heavy tabs',
-            label: 'Open tabs',
-          },
-        ]
-        cards.forEach(({ val, sub, label }) => {
-          const card = document.createElement('div')
-          card.className = 'stat-card'
-          card.innerHTML = `
-            <div class="stat-val">${val}</div>
-            <div style="font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;margin-bottom:4px">${sub}</div>
-            <div class="stat-label">${label}</div>
-          `
-          grid.appendChild(card)
-        })
+        grid.appendChild(makeStatCard(browserRAMLabel, browserRAMSub, 'Browser RAM'))
+        grid.appendChild(makeStatCard(`${freeGB} GB`, `free of ${totalGB} GB total`, 'System RAM free'))
+        grid.appendChild(makeStatCard(String(validTabs.length), `${heavyCount} heavy · ${validTabs.length - heavyCount} normal`, 'Open tabs'))
 
         const wrap = el('res-pressure-wrap')
         wrap.style.display = 'block'
-        el('res-pressure-label').textContent =
-          `Browser using ~${pressurePct}% of system RAM — ${pressurePct >= 60 ? 'high, consider closing heavy or inactive tabs' : pressurePct >= 40 ? 'moderate, keep an eye on heavy tabs' : 'healthy'}`
+        el('res-pressure-label').textContent = `RAM pressure — ${pressureStatus}`
+        el('res-pressure-pct').textContent    = `${pressurePct}%`
         const bar = el('res-pressure-bar')
-        bar.style.width = `${pressurePct}%`
+        bar.style.width      = `${pressurePct}%`
         bar.style.background = pressureColor
+        el('res-pressure-hint').textContent =
+          pressurePct >= 60
+            ? `Chrome is using a large share of your system RAM. Closing heavy tabs (video, design apps) or idle tabs will free memory immediately.`
+            : pressurePct >= 40
+            ? `Memory use is moderate. Heavy tabs like video streams and design tools are the biggest contributors.`
+            : `Memory use is low. All tabs are running comfortably within your system RAM.`
 
         resolve()
       })
     } catch {
-      // system.memory not available — show tab-only estimate
-      const browserGB = (estimatedBrowserMB / 1024).toFixed(1)
-      const cards = [
-        { val: `~${browserGB} GB`, sub: 'estimated browser usage', label: 'Browser RAM' },
-        { val: `${validTabs.length}`, sub: heavyCount > 0 ? `${heavyCount} heavy tab${heavyCount > 1 ? 's' : ''}` : 'no heavy tabs', label: 'Open tabs' },
-      ]
-      cards.forEach(({ val, sub, label }) => {
-        const card = document.createElement('div')
-        card.className = 'stat-card'
-        card.innerHTML = `
-          <div class="stat-val">${val}</div>
-          <div style="font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;margin-bottom:4px">${sub}</div>
-          <div class="stat-label">${label}</div>
-        `
-        grid.appendChild(card)
-      })
+      grid.appendChild(makeStatCard(browserRAMLabel, browserRAMSub, 'Browser RAM'))
+      grid.appendChild(makeStatCard(String(validTabs.length), `${heavyCount} heavy · ${validTabs.length - heavyCount} normal`, 'Open tabs'))
       resolve()
     }
   })
@@ -677,37 +878,69 @@ async function renderResources() {
   tbody.innerHTML = ''
 
   const tabsSorted = [...validTabs].sort((a, b) => {
-    const aHeavy = HEAVY_SITES[new URL(a.url!).hostname.replace(/^www\./, '')] ? 1 : 0
-    const bHeavy = HEAVY_SITES[new URL(b.url!).hostname.replace(/^www\./, '')] ? 1 : 0
-    return bHeavy - aHeavy
+    const da = new URL(a.url!).hostname.replace(/^www\./, '')
+    const db = new URL(b.url!).hostname.replace(/^www\./, '')
+    return tabMemMB(b.id!, db).mb - tabMemMB(a.id!, da).mb
   })
 
   tabsSorted.forEach(tab => {
-    const domain = new URL(tab.url!).hostname.replace(/^www\./, '')
-    const rec = tabRecords.find(r => r.tabId === tab.id) ?? tabRecords.find(r => r.domain === domain)
-    const heavy = HEAVY_SITES[domain]
-    const { label: impactLabel, color: impactColor } = memImpact(domain, !!heavy)
-    const lastSeen = rec?.lastVisited ? relativeTime(rec.lastVisited) : '—'
-    const catColor = settings.categories.find(c => c.name === rec?.category)?.color ?? 'var(--text-dim)'
+    const domain   = new URL(tab.url!).hostname.replace(/^www\./, '')
+    const rec            = tabRecords.find(r => r.tabId === tab.id) ?? tabRecords.find(r => r.domain === domain)
+    const heavy          = SITE_LABELS[domain]
+    const { mb: memMB, real: memReal } = tabMemMB(tab.id!, domain)
+    const memDisplay     = memReal ? `${memMB} MB` : `~${memMB} MB`
+    const catColor       = settings.categories.find(c => c.name === rec?.category)?.color ?? 'var(--text-dim)'
+    const lastSeen       = rec?.lastVisited ? relativeTime(rec.lastVisited) : '—'
+    const title          = tab.title ? tab.title.replace(/</g, '&lt;').slice(0, 60) : domain
 
     const tr = document.createElement('tr')
     tr.innerHTML = `
-      <td>
-        <div style="font-size:12px;color:var(--text)">${domain}</div>
-        ${heavy ? `<div style="font-size:10px;color:#ff9a3c;font-family:'JetBrains Mono',monospace">${heavy}</div>` : ''}
+      <td class="res-tab-cell">
+        <span class="res-tab-domain">${domain}</span>
+        <span class="res-tab-title">${title}</span>
+        ${heavy ? `<span class="res-heavy-tag">${heavy}</span>` : ''}
       </td>
-      <td><span class="cat-dot" style="background:${catColor}"></span><span style="font-size:12px;color:var(--text-dim)">${rec?.category ?? '—'}</span></td>
-      <td style="color:${impactColor};font-size:12px;font-family:'JetBrains Mono',monospace">${impactLabel}</td>
-      <td style="font-size:11px;color:var(--text-low);font-family:'JetBrains Mono',monospace">${lastSeen}</td>
+      <td><span class="cat-dot" style="background:${catColor}"></span><span class="res-cat-name">${rec?.category ?? '—'}</span></td>
+      <td class="res-mem-cell ${memMB >= 200 ? 'res-mem-heavy' : ''}">${memDisplay}</td>
+      <td class="res-last-seen">${lastSeen}</td>
+      <td><button class="res-close-btn" data-tab-id="${tab.id}" title="Close this tab">✕</button></td>
     `
+    tr.querySelector<HTMLButtonElement>('.res-close-btn')?.addEventListener('click', async () => {
+      if (!await askConfirm({ title: 'Close tab?', message: `Close ${domain}?`, confirmLabel: 'Close' })) return
+      await chrome.tabs.remove(tab.id!)
+      tr.remove()
+    })
     tbody.appendChild(tr)
   })
 
-  const oneHourAgo = Date.now() - 60 * 60 * 1000
+  const actionsEl = el('res-actions')
+  actionsEl.innerHTML = ''
+  if (heavyCount > 0) {
+    const heavyMemGB = Math.round(heavyTabs.reduce((s, t) => {
+      const d = new URL(t.url!).hostname.replace(/^www\./, '')
+      return s + tabMemMB(t.id!, d).mb
+    }, 0) / 1024 * 10) / 10
+    const closeHeavyBtn = document.createElement('button')
+    closeHeavyBtn.className = 'secondary'
+    closeHeavyBtn.textContent = `Close ${heavyCount} heavy tab${heavyCount > 1 ? 's' : ''} — free ~${heavyMemGB} GB`
+    closeHeavyBtn.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: 'Close heavy tabs?',
+        message: `Close ${heavyCount} heavy tab${heavyCount > 1 ? 's' : ''} and free ~${heavyMemGB} GB of memory?`,
+        confirmLabel: 'Close tabs',
+      })) return
+      const ids = heavyTabs.map(t => t.id!)
+      await Promise.all(ids.map(id => chrome.tabs.remove(id)))
+      await renderResources()
+    })
+    actionsEl.appendChild(closeHeavyBtn)
+  }
+
+  const oneHourAgo   = Date.now() - 60 * 60 * 1000
   const inactiveTabs = validTabs
     .map(tab => {
       const domain = new URL(tab.url!).hostname.replace(/^www\./, '')
-      const rec = tabRecords.find(r => r.tabId === tab.id) ?? tabRecords.find(r => r.domain === domain)
+      const rec    = tabRecords.find(r => r.tabId === tab.id) ?? tabRecords.find(r => r.domain === domain)
       return { tab, domain, rec, lastVisited: rec?.lastVisited ?? 0 }
     })
     .filter(t => t.lastVisited < oneHourAgo && !t.tab.active)
@@ -717,40 +950,45 @@ async function renderResources() {
   inactiveTbody.innerHTML = ''
 
   if (inactiveTabs.length === 0) {
-    inactiveTbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-low);padding:20px 0">No tabs idle for 1+ hour</td></tr>`
+    inactiveTbody.innerHTML = `<tr><td colspan="4" class="res-empty">No tabs have been idle for 1+ hour</td></tr>`
   } else {
     inactiveTabs.forEach(({ tab, domain, rec }) => {
       const catColor = settings.categories.find(c => c.name === rec?.category)?.color ?? 'var(--text-dim)'
-      const idle = rec?.lastVisited ? relativeTime(rec.lastVisited) : 'unknown'
-      const tr = document.createElement('tr')
-      tr.innerHTML = `
-        <td style="font-size:12px;color:var(--text)">${domain}</td>
-        <td><span class="cat-dot" style="background:${catColor}"></span><span style="font-size:12px;color:var(--text-dim)">${rec?.category ?? '—'}</span></td>
-        <td style="font-size:11px;color:var(--text-low);font-family:'JetBrains Mono',monospace">${idle}</td>
-        <td><button class="secondary" style="font-size:10px;padding:3px 8px" data-tab-id="${tab.id}">Close</button></td>
+      const idle     = rec?.lastVisited ? relativeTime(rec.lastVisited) : 'unknown'
+      const tr       = document.createElement('tr')
+      tr.innerHTML   = `
+        <td class="res-tab-domain">${domain}</td>
+        <td><span class="cat-dot" style="background:${catColor}"></span><span class="res-cat-name">${rec?.category ?? '—'}</span></td>
+        <td class="res-last-seen">${idle}</td>
+        <td><button class="res-close-btn" data-tab-id="${tab.id}" title="Close this tab">✕</button></td>
       `
-      tr.querySelector<HTMLButtonElement>('[data-tab-id]')?.addEventListener('click', async e => {
-        const id = Number((e.target as HTMLElement).dataset.tabId)
-        await chrome.tabs.remove(id)
+      tr.querySelector<HTMLButtonElement>('.res-close-btn')?.addEventListener('click', async () => {
+        if (!await askConfirm({ title: 'Close tab?', message: `Close ${domain}?`, confirmLabel: 'Close' })) return
+        await chrome.tabs.remove(tab.id!)
         tr.remove()
       })
       inactiveTbody.appendChild(tr)
     })
   }
 
-  // ── Bulk action buttons ───────────────────────────────────
-  const actionsEl = el('res-inactive-actions')
-  actionsEl.innerHTML = ''
+  const inactiveActionsEl = el('res-inactive-actions')
+  inactiveActionsEl.innerHTML = ''
   if (inactiveTabs.length > 0) {
     const closeAllBtn = document.createElement('button')
     closeAllBtn.className = 'secondary'
-    closeAllBtn.textContent = `Close all ${inactiveTabs.length} inactive tabs`
+    const inactiveMemGB = Math.round(inactiveTabs.reduce((s, t) => s + tabMemMB(t.tab.id!, t.domain).mb, 0) / 1024 * 10) / 10
+    closeAllBtn.textContent = `Close all ${inactiveTabs.length} inactive tab${inactiveTabs.length > 1 ? 's' : ''} — free ~${inactiveMemGB} GB`
     closeAllBtn.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: 'Close all inactive tabs?',
+        message: `Close ${inactiveTabs.length} tab${inactiveTabs.length > 1 ? 's' : ''}? You can reopen them from your browser history.`,
+        confirmLabel: 'Close all',
+      })) return
       await Promise.all(inactiveTabs.map(t => chrome.tabs.remove(t.tab.id!)))
-      inactiveTbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-low);padding:20px 0">All inactive tabs closed</td></tr>`
-      actionsEl.innerHTML = ''
+      inactiveTbody.innerHTML = `<tr><td colspan="4" class="res-empty">All inactive tabs closed</td></tr>`
+      inactiveActionsEl.innerHTML = ''
     })
-    actionsEl.appendChild(closeAllBtn)
+    inactiveActionsEl.appendChild(closeAllBtn)
   }
 }
 
