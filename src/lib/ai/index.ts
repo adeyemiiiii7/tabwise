@@ -25,5 +25,9 @@ export function getProvider(name: AIProviderName, apiKey: string): AIProvider {
     case 'openai': return openAIProvider(apiKey)
     case 'claude': return claudeProvider(apiKey)
     case 'gemini': return geminiProvider(apiKey)
+    default: {
+      const unreachable: never = name
+      throw new Error(`Unknown AI provider: ${unreachable}`)
+    }
   }
 }

@@ -115,7 +115,7 @@ async function init() {
     const colorInput = document.getElementById('new-cat-color') as HTMLInputElement
     const name = nameInput.value.trim()
     if (!name) return
-    categories.push({ id: randomId(), name, color: colorInput.value, keywords: [] })
+    categories.push({ id: randomId(), name, color: colorInput.value })
     nameInput.value = ''
     colorInput.value = '#888888'
     renderCategories()

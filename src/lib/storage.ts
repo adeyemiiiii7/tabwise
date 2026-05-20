@@ -65,7 +65,7 @@ export interface QuotaBlock {
 
 export async function getQuotaBlock(): Promise<QuotaBlock | null> {
   const result = await chrome.storage.local.get('quotaBlock')
-  return (result.quotaBlock as QuotaBlock) ?? null
+  return (result.quotaBlock as QuotaBlock | undefined) ?? null
 }
 
 export async function setQuotaBlock(provider: string): Promise<void> {

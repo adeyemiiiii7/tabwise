@@ -68,12 +68,13 @@ function applyTheme(light: boolean) {
   const border  = cssVar('--border')
 
   if (weekChart) {
+    type ScaleOpts = { ticks: { color: string }; grid: { color: string } }
     const lo = weekChart.options
     lo.plugins!.legend!.labels!.color = textDim
-    ;(lo.scales!.x as any).ticks.color = textDim
-    ;(lo.scales!.x as any).grid.color  = border
-    ;(lo.scales!.y as any).ticks.color = textDim
-    ;(lo.scales!.y as any).grid.color  = border
+    ;(lo.scales!.x as unknown as ScaleOpts).ticks.color = textDim
+    ;(lo.scales!.x as unknown as ScaleOpts).grid.color  = border
+    ;(lo.scales!.y as unknown as ScaleOpts).ticks.color = textDim
+    ;(lo.scales!.y as unknown as ScaleOpts).grid.color  = border
     weekChart.update()
   }
   if (catChart) {
@@ -473,7 +474,7 @@ async function init() {
     const name = nameInput.value.trim()
     if (!name) return
     const emoji = emojiInput.value.trim() || undefined
-    categories.push({ id: randomId(), name, color: colorInput.value, emoji, keywords: [] })
+    categories.push({ id: randomId(), name, color: colorInput.value, emoji })
     nameInput.value = ''
     emojiInput.value = ''
     renderCategories()
