@@ -1,7 +1,28 @@
 {
   "name": "tabwise",
   "version": "1.0.0",
-  "description": "AI-powered tab organizer",
+  "description": "Organize your tabs automatically and track screen time. Works offline or with OpenAI, Claude, or Gemini.",
+  "license": "MIT",
+  "author": "adeyemi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adeyemiiiii7/tabwise.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adeyemiiiii7/tabwise/issues"
+  },
+  "homepage": "https://github.com/adeyemiiiii7/tabwise#readme",
+  "keywords": [
+    "chrome-extension",
+    "browser-extension",
+    "tab-manager",
+    "screen-time",
+    "productivity",
+    "manifest-v3",
+    "openai",
+    "claude",
+    "gemini"
+  ],
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build"
