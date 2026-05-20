@@ -1,4 +1,5 @@
 import { AIProvider, CategorizeResult, QuotaExceededError } from './index'
+import { findCategoryName } from '../categorizer'
 
 export function claudeProvider(apiKey: string): AIProvider {
   return {
@@ -25,20 +26,14 @@ export function claudeProvider(apiKey: string): AIProvider {
       if (!response.ok) throw new Error(`Claude ${response.status}: ${await response.text()}`)
 
       const data = await response.json()
+      const raw = data.content?.[0]?.text
+      if (typeof raw !== 'string') throw new Error('Claude returned no text content')
+      const clean = raw.trim().replace(/[^a-zA-Z\s]/g, '').trim()
       return {
-        category: pickCategory(data.content?.[0]?.text ?? '', categories),
+        category: findCategoryName(clean, categories),
         inputTokens: data.usage?.input_tokens ?? 0,
         outputTokens: data.usage?.output_tokens ?? 0,
       }
     },
   }
-}
-
-function pickCategory(reply: string, categories: string[]): string {
-  const clean = reply.trim().replace(/[^a-zA-Z\s]/g, '').trim().toLowerCase()
-  return (
-    categories.find(c => c.toLowerCase() === clean) ??
-    categories.find(c => clean.includes(c.toLowerCase())) ??
-    categories[0]
-  )
 }

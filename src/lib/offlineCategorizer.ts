@@ -1,14 +1,25 @@
+import { PageMetadata } from '../types'
 import { lookupKnownSite } from './knownSites'
+import { CategoryNotFoundError } from './categorizer'
 
 export interface OfflineResult {
   category: string   // matched to user's actual category list
   confidence: 'high' | 'low'
 }
 
+export class NoCategoryDecisionError extends Error {
+  constructor(public reason: 'no-signals' | 'invalid-url') {
+    super(`Offline categorizer could not decide: ${reason}`)
+    this.name = 'NoCategoryDecisionError'
+  }
+}
+
 interface Signal {
   category: string
   strength: number
 }
+
+type SignalSource = 'url' | 'title' | 'metadata'
 
 function getPath(url: string): string {
   try { return new URL(url).pathname.toLowerCase() } catch { return '' }
@@ -18,8 +29,14 @@ function analyzeUrl(url: string, domain: string): Signal[] {
   const signals: Signal[] = []
   const path = getPath(url)
 
-  if (domain.endsWith('.edu') || /\.ac\.[a-z]{2}$/.test(domain)) {
+  if (domain.endsWith('.edu') || /\.edu\.[a-z]{2,3}$/.test(domain) || /\.ac\.[a-z]{2,3}$/.test(domain)) {
     signals.push({ category: 'School', strength: 3 })
+  }
+  if (domain.endsWith('.gov') || /\.gov\.[a-z]{2,3}$/.test(domain)) {
+    signals.push({ category: 'Work', strength: 2 })
+  }
+  if (domain.endsWith('.mil')) {
+    signals.push({ category: 'Work', strength: 3 })
   }
 
   const sub = domain.split('.')[0].toLowerCase()
@@ -128,33 +145,128 @@ function analyzeTitle(title: string): Signal[] {
   return signals
 }
 
-function resolveCategory(canonical: string, categoryNames: string[]): string | null {
-  const lower = canonical.toLowerCase()
-  return (
-    categoryNames.find(c => c.toLowerCase() === lower) ??
-    categoryNames.find(c => c.toLowerCase().includes(lower)) ??
-    categoryNames.find(c => lower.includes(c.toLowerCase())) ??
-    null
-  )
+const OG_TYPE_SIGNALS: Record<string, Signal> = {
+  'video.movie':         { category: 'Entertainment', strength: 3 },
+  'video.episode':       { category: 'Entertainment', strength: 3 },
+  'video.tv_show':       { category: 'Entertainment', strength: 3 },
+  'video.other':         { category: 'Entertainment', strength: 2 },
+  'music.song':          { category: 'Entertainment', strength: 3 },
+  'music.album':         { category: 'Entertainment', strength: 3 },
+  'music.playlist':      { category: 'Entertainment', strength: 3 },
+  'music.radio_station': { category: 'Entertainment', strength: 3 },
+  'product':             { category: 'Personal', strength: 3 },
+  'product.group':       { category: 'Personal', strength: 3 },
+  'product.item':        { category: 'Personal', strength: 3 },
+  'profile':             { category: 'Personal', strength: 2 },
+  'article':             { category: 'Personal', strength: 1 },
+  'book':                { category: 'School', strength: 1 },
 }
 
-export function offlineCategorize(url: string, title: string, categoryNames: string[]): OfflineResult {
-  try {
-    const domain = new URL(url).hostname.replace(/^www\./, '')
-    const known = lookupKnownSite(domain)
-    if (known) {
-      const resolved = resolveCategory(known, categoryNames) ?? categoryNames[0]
-      return { category: resolved, confidence: 'high' }
+const SCHEMA_TYPE_SIGNALS: Record<string, Signal> = {
+  'Course':             { category: 'School', strength: 3 },
+  'EducationalContent': { category: 'School', strength: 3 },
+  'LearningResource':   { category: 'School', strength: 3 },
+  'Quiz':               { category: 'School', strength: 3 },
+  'EducationEvent':     { category: 'School', strength: 2 },
+  'VideoObject':        { category: 'Entertainment', strength: 3 },
+  'Movie':              { category: 'Entertainment', strength: 3 },
+  'TVSeries':           { category: 'Entertainment', strength: 3 },
+  'TVEpisode':          { category: 'Entertainment', strength: 3 },
+  'MusicRecording':     { category: 'Entertainment', strength: 3 },
+  'MusicAlbum':         { category: 'Entertainment', strength: 3 },
+  'MusicVideoObject':   { category: 'Entertainment', strength: 3 },
+  'PodcastEpisode':     { category: 'Entertainment', strength: 2 },
+  'PodcastSeries':      { category: 'Entertainment', strength: 2 },
+  'Game':               { category: 'Entertainment', strength: 3 },
+  'VideoGame':          { category: 'Entertainment', strength: 3 },
+  'Product':            { category: 'Personal', strength: 3 },
+  'Offer':              { category: 'Personal', strength: 2 },
+  'AggregateOffer':     { category: 'Personal', strength: 2 },
+  'Recipe':             { category: 'Personal', strength: 2 },
+  'Event':              { category: 'Personal', strength: 2 },
+  'NewsArticle':        { category: 'Personal', strength: 2 },
+  'BlogPosting':        { category: 'Personal', strength: 1 },
+  'Article':            { category: 'Personal', strength: 1 },
+  'SoftwareApplication':{ category: 'Work', strength: 2 },
+  'WebApplication':     { category: 'Work', strength: 2 },
+  'TechArticle':        { category: 'Work', strength: 2 },
+  'APIReference':       { category: 'Work', strength: 3 },
+}
+
+function analyzeMetadata(metadata: PageMetadata | null): Signal[] {
+  if (!metadata) return []
+  const signals: Signal[] = []
+
+  if (metadata.ogType) {
+    const lookup = OG_TYPE_SIGNALS[metadata.ogType.toLowerCase()]
+    if (lookup) signals.push(lookup)
+  }
+
+  for (const schemaType of metadata.schemaTypes) {
+    const lookup = SCHEMA_TYPE_SIGNALS[schemaType]
+    if (lookup) signals.push(lookup)
+  }
+
+  const corpus = `${metadata.description ?? ''} ${metadata.keywords ?? ''} ${metadata.headings.join(' ')}`.toLowerCase()
+  if (corpus.trim().length > 0) {
+    if (/\b(tutorial|course|lecture|lesson|study|homework|assignment|quiz|exam|syllabus|curriculum)\b/.test(corpus)) {
+      signals.push({ category: 'School', strength: 2 })
     }
-  } catch { /* invalid URL — fall through */ }
+    if (/\b(shop|store|sale|deals?|cart|purchase|order|discount|coupons?)\b/.test(corpus)) {
+      signals.push({ category: 'Personal', strength: 2 })
+    }
+    if (/\b(watch|stream|episode|trailer|series|anime|playlist|soundtrack|gameplay)\b/.test(corpus)) {
+      signals.push({ category: 'Entertainment', strength: 2 })
+    }
+    if (/\b(documentation|developer|api|sdk|repository|integration|workflow|enterprise|saas|admin)\b/.test(corpus)) {
+      signals.push({ category: 'Work', strength: 2 })
+    }
+    if (/\b(news|politics|opinion|column|breaking|headlines)\b/.test(corpus)) {
+      signals.push({ category: 'Personal', strength: 1 })
+    }
+  }
 
-  let domain = ''
-  try { domain = new URL(url).hostname.replace(/^www\./, '') } catch { /* ok */ }
+  return signals
+}
 
-  const signals = [...analyzeUrl(url, domain), ...analyzeTitle(title)]
+function resolveCategory(canonical: string, categoryNames: string[]): string {
+  const lower = canonical.toLowerCase()
+  const result = (
+    categoryNames.find(c => c.toLowerCase() === lower) ??
+    categoryNames.find(c => c.toLowerCase().includes(lower)) ??
+    categoryNames.find(c => lower.includes(c.toLowerCase()))
+  )
+  if (!result) throw new CategoryNotFoundError(canonical)
+  return result
+}
+
+export function offlineCategorize(
+  url: string,
+  title: string,
+  categoryNames: string[],
+  metadata: PageMetadata | null = null,
+): OfflineResult {
+  let domain: string
+  try {
+    domain = new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    throw new NoCategoryDecisionError('invalid-url')
+  }
+
+  const known = lookupKnownSite(domain)
+  if (known) {
+    return { category: resolveCategory(known, categoryNames), confidence: 'high' }
+  }
+
+  const sources: Record<SignalSource, Signal[]> = {
+    url: analyzeUrl(url, domain),
+    title: analyzeTitle(title),
+    metadata: analyzeMetadata(metadata),
+  }
+  const signals = [...sources.url, ...sources.title, ...sources.metadata]
 
   if (signals.length === 0) {
-    return { category: categoryNames[0], confidence: 'low' }
+    throw new NoCategoryDecisionError('no-signals')
   }
 
   const scores: Record<string, number> = {}
@@ -162,9 +274,14 @@ export function offlineCategorize(url: string, title: string, categoryNames: str
     scores[category] = (scores[category] ?? 0) + strength
   }
 
-  const [[topCanonical, topScore]] = Object.entries(scores).sort(([, a], [, b]) => b - a)
-  const resolved = resolveCategory(topCanonical, categoryNames) ?? categoryNames[0]
-  const confidence = topScore >= 3 ? 'high' : 'low'
+  const ranked = Object.entries(scores).sort(([, a], [, b]) => b - a)
+  const [topCanonical, topScore] = ranked[0]
+  const resolved = resolveCategory(topCanonical, categoryNames)
+
+  const sourceCount = (Object.keys(sources) as SignalSource[]).filter(
+    src => sources[src].some(s => s.category === topCanonical),
+  ).length
+  const confidence: 'high' | 'low' = (topScore >= 5 || sourceCount >= 2) ? 'high' : 'low'
 
   return { category: resolved, confidence }
 }

@@ -262,20 +262,97 @@ function showToast(
   document.addEventListener('mouseup', onMouseUp)
 }
 
+// ── Page metadata extraction ───────────────────────────────
+// Reads og:*, schema.org JSON-LD @type, meta description/keywords, h1/h2.
+// Used by background to score unknown sites with real signal beyond URL+title.
+
+interface PageMetadata {
+  ogType: string | null
+  ogSiteName: string | null
+  description: string | null
+  keywords: string | null
+  schemaTypes: string[]
+  headings: string[]
+}
+
+function getMetaContent(value: string, attr: 'name' | 'property'): string | null {
+  const el = document.querySelector<HTMLMetaElement>(`meta[${attr}="${value}" i]`)
+  const content = el?.content?.trim()
+  return content && content.length > 0 ? content : null
+}
+
+function collectSchemaTypes(node: unknown, out: Set<string>): void {
+  if (!node || typeof node !== 'object') return
+  if (Array.isArray(node)) {
+    for (const item of node) collectSchemaTypes(item, out)
+    return
+  }
+  const obj = node as Record<string, unknown>
+  const type = obj['@type']
+  if (typeof type === 'string') out.add(type)
+  else if (Array.isArray(type)) for (const t of type) if (typeof t === 'string') out.add(t)
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === 'object') collectSchemaTypes(value, out)
+  }
+}
+
+function extractSchemaTypes(): string[] {
+  const scripts = document.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"]')
+  const types = new Set<string>()
+  scripts.forEach(s => {
+    try {
+      const parsed = JSON.parse(s.textContent ?? '')
+      collectSchemaTypes(parsed, types)
+    } catch { /* malformed JSON-LD on the page — ignore */ }
+  })
+  return Array.from(types)
+}
+
+function extractHeadings(): string[] {
+  const els = document.querySelectorAll('h1, h2')
+  const out: string[] = []
+  for (const el of Array.from(els)) {
+    if (out.length >= 5) break
+    const txt = el.textContent?.trim()
+    if (txt) out.push(txt.slice(0, 200))
+  }
+  return out
+}
+
+function getPageMetadata(): PageMetadata {
+  return {
+    ogType: getMetaContent('og:type', 'property'),
+    ogSiteName: getMetaContent('og:site_name', 'property'),
+    description: getMetaContent('description', 'name'),
+    keywords: getMetaContent('keywords', 'name'),
+    schemaTypes: extractSchemaTypes(),
+    headings: extractHeadings(),
+  }
+}
+
 // ── Message listener ───────────────────────────────────────
 // Double-wrapped: outer catch handles addListener failing (e.g. on first load
 // in an invalidated context); inner catch handles the callback firing after
 // a reload when chrome.runtime is already gone.
 
 try {
-  chrome.runtime.onMessage.addListener(msg => {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     try {
       if (msg.type === 'SHOW_TOAST') {
         showToast(msg.domain, msg.category, msg.categories, msg.tabId, msg.mode)
+        return false
+      }
+      if (msg.type === 'GET_PAGE_METADATA') {
+        // Only the top frame answers, otherwise the background gets a response
+        // from an iframe (often blank) before the page's real metadata is read.
+        if (window !== window.top) return false
+        sendResponse(getPageMetadata())
+        return false
       }
     } catch {
       // Extension context invalidated while callback was executing — ignore
     }
+    return false
   })
 } catch {
   // Extension reloaded — content script replaced on next navigation

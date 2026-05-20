@@ -5,9 +5,11 @@ import { moveTabToCategory, moveGroupToNewWindow, invalidateGroupCache, colorFro
 import { startTracking, flushCurrent, pauseTracking, getActiveTime, resumeTracking } from '../lib/screentime'
 import { setupAlarm, onAlarm } from '../lib/scheduler'
 import { getTabRecords, saveTabRecords, getQuotaBlock, setQuotaBlock, clearQuotaBlock, isQuotaBlockedToday } from '../lib/storage'
-import { matchCategory } from '../lib/categorizer'
+import { matchCategory, CategoryNotFoundError } from '../lib/categorizer'
 import { buildRAGContext, recordAPICall } from '../lib/rag'
-import { offlineCategorize } from '../lib/offlineCategorizer'
+import { offlineCategorize, NoCategoryDecisionError } from '../lib/offlineCategorizer'
+import { isAmbiguous } from '../lib/knownSites'
+import { PageMetadata, Category } from '../types'
 
 let cachedRAGContext: Awaited<ReturnType<typeof buildRAGContext>> | null = null
 
@@ -47,6 +49,46 @@ chrome.runtime.onInstalled.addListener(async () => {
   setupAlarm(settings.inactivityThresholdHours)
 })
 
+async function fetchPageMetadata(tabId: number): Promise<PageMetadata | null> {
+  try {
+    const reply = chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_METADATA' })
+    const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 1500))
+    const result = await Promise.race([reply, timeout])
+    if (!result || typeof result !== 'object') return null
+    return result as PageMetadata
+  } catch {
+    return null
+  }
+}
+
+async function applyOfflineDecision(
+  tabId: number,
+  windowId: number,
+  domain: string,
+  url: string,
+  title: string,
+  categoryNames: string[],
+  metadata: PageMetadata | null,
+  categories: Category[],
+  ambiguous: boolean,
+  tab: chrome.tabs.Tab,
+): Promise<void> {
+  try {
+    const result = offlineCategorize(url, title, categoryNames, metadata)
+    const category = matchCategory(result.category, categories)
+    await moveTabToCategory(tabId, windowId, category)
+    await updateRecord(tab, category.name)
+    const mode = (ambiguous || result.confidence !== 'high') ? 'ask' : 'confirm'
+    sendToast(tabId, domain, category.name, categoryNames, mode)
+  } catch (err) {
+    if (err instanceof NoCategoryDecisionError || err instanceof CategoryNotFoundError) {
+      sendToast(tabId, domain, null, categoryNames, 'ask')
+      return
+    }
+    throw err
+  }
+}
+
 async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
   const url = tab.url ?? ''
   const title = tab.title ?? ''
@@ -64,73 +106,61 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
   const settings = await getSettings()
   if (!settings.onboardingComplete) return
 
+  const tabId = tab.id
+  const windowId = tab.windowId
   const domain = getDomain(url)
   const categoryNames = settings.categories.map(c => c.name)
   const learned = await getLearnedSites()
+  const ambiguous = isAmbiguous(domain)
 
   if (learned[domain] && categoryNames.includes(learned[domain])) {
     const category = matchCategory(learned[domain], settings.categories)
-    await moveTabToCategory(tab.id, tab.windowId, category)
+    await moveTabToCategory(tabId, windowId, category)
     await updateRecord(tab, category.name)
     return
   }
 
+  const metadata = await fetchPageMetadata(tabId)
+
   if (!settings.apiKey || !(settings.useAI ?? true)) {
-    const result = offlineCategorize(url, title, categoryNames)
-    const category = matchCategory(result.category, settings.categories)
-    await moveTabToCategory(tab.id, tab.windowId, category)
-    await updateRecord(tab, category.name)
-    sendToast(tab.id, domain, category.name, categoryNames, result.confidence === 'high' ? 'confirm' : 'ask')
+    await applyOfflineDecision(tabId, windowId, domain, url, title, categoryNames, metadata, settings.categories, ambiguous, tab)
     return
   }
 
   const quotaBlock = await getQuotaBlock()
   if (quotaBlock && isQuotaBlockedToday(quotaBlock)) {
-    const result = offlineCategorize(url, title, categoryNames)
-    const category = matchCategory(result.category, settings.categories)
-    await moveTabToCategory(tab.id, tab.windowId, category)
-    await updateRecord(tab, category.name)
-    sendToast(tab.id, domain, category.name, categoryNames, result.confidence === 'high' ? 'confirm' : 'ask')
+    await applyOfflineDecision(tabId, windowId, domain, url, title, categoryNames, metadata, settings.categories, ambiguous, tab)
     return
   }
 
   const ragContext = await getRAGContext(settings)
   const provider = getProvider(settings.provider, settings.apiKey)
 
-  let categoryName: string | null = null
-  let aiOk = false
-
   try {
     const result = await provider.categorize(url, title, categoryNames, ragContext.systemPrompt)
-    categoryName = result.category
-    aiOk = true
     await recordAPICall(result.inputTokens, result.outputTokens)
     if (quotaBlock) await clearQuotaBlock()
+    const category = matchCategory(result.category, settings.categories)
+    await moveTabToCategory(tabId, windowId, category)
+    await updateRecord(tab, category.name)
+    sendToast(tabId, domain, category.name, categoryNames, ambiguous ? 'ask' : 'confirm')
+    return
   } catch (err) {
     if (err instanceof QuotaExceededError) {
       await handleQuotaExceeded(err.provider)
-      const result = offlineCategorize(url, title, categoryNames)
-      const category = matchCategory(result.category, settings.categories)
-      await moveTabToCategory(tab.id, tab.windowId, category)
-      await updateRecord(tab, category.name)
-      sendToast(tab.id, domain, category.name, categoryNames, result.confidence === 'high' ? 'confirm' : 'ask')
+      await applyOfflineDecision(tabId, windowId, domain, url, title, categoryNames, metadata, settings.categories, ambiguous, tab)
+      return
+    }
+    if (err instanceof CategoryNotFoundError) {
+      console.warn('[Tabwise] AI returned unmatchable category — using offline:', err.message)
+      await recordAPICall(0, 0)
+      await applyOfflineDecision(tabId, windowId, domain, url, title, categoryNames, metadata, settings.categories, ambiguous, tab)
       return
     }
     console.error('[Tabwise] AI categorization failed:', err)
     await recordAPICall(0, 0)
-    const offlineResult = offlineCategorize(url, title, categoryNames)
-    categoryName = offlineResult.category
+    await applyOfflineDecision(tabId, windowId, domain, url, title, categoryNames, metadata, settings.categories, ambiguous, tab)
   }
-
-  if (!categoryName || !categoryNames.includes(categoryName)) {
-    categoryName = categoryNames[0]
-  }
-
-  const category = matchCategory(categoryName, settings.categories)
-  await moveTabToCategory(tab.id, tab.windowId, category)
-  await updateRecord(tab, category.name)
-  const toastMode = aiOk ? 'confirm' : 'ask'
-  sendToast(tab.id, domain, category.name, categoryNames, toastMode)
 }
 
 async function handleQuotaExceeded(providerName: string): Promise<void> {
@@ -148,7 +178,7 @@ async function handleQuotaExceeded(providerName: string): Promise<void> {
 function sendToast(
   tabId: number,
   domain: string,
-  category: string,
+  category: string | null,
   categories: string[],
   mode: 'ask' | 'confirm'
 ) {
@@ -167,6 +197,13 @@ async function updateRecord(tab: chrome.tabs.Tab, categoryName: string) {
   const record = tabToRecord(tab, categoryName)
   const updated = records.filter(r => r.tabId !== tab.id)
   await saveTabRecords([...updated, record])
+}
+
+function recordCategorizedTab(records: import('../types').TabRecord[], tab: chrome.tabs.Tab, categoryName: string): void {
+  const record = tabToRecord(tab, categoryName)
+  const idx = records.findIndex(r => r.tabId === tab.id)
+  if (idx >= 0) records[idx] = record
+  else records.push(record)
 }
 
 chrome.tabs.onCreated.addListener(tab => {
@@ -362,48 +399,60 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const updatedRecords = [...records]
 
       for (const tab of validTabs) {
+        const tabId = tab.id!
+        const windowId = tab.windowId!
+        const url = tab.url!
+        const title = tab.title ?? ''
+        const domain = getDomain(url)
+
         try {
-          const domain = getDomain(tab.url!)
+          if (learned[domain] && categoryNames.includes(learned[domain])) {
+            const category = matchCategory(learned[domain], settings.categories)
+            await moveTabToCategory(tabId, windowId, category)
+            recordCategorizedTab(updatedRecords, tab, category.name)
+            count++
+            continue
+          }
+
+          let metadata: PageMetadata | null = null
           let categoryName: string | null = null
 
-          if (learned[domain] && categoryNames.includes(learned[domain])) {
-            categoryName = learned[domain]
-          } else if (inOfflineMode) {
-            const result = offlineCategorize(tab.url!, tab.title ?? '', categoryNames)
-            categoryName = result.category
-          } else {
+          if (!inOfflineMode) {
             try {
-              const result = await provider!.categorize(
-                tab.url!, tab.title ?? '', categoryNames, ragContext!.systemPrompt
-              )
+              const result = await provider!.categorize(url, title, categoryNames, ragContext!.systemPrompt)
               categoryName = result.category
               await recordAPICall(result.inputTokens, result.outputTokens)
             } catch (err) {
               if (err instanceof QuotaExceededError) {
                 await handleQuotaExceeded(err.provider)
-                const result = offlineCategorize(tab.url!, tab.title ?? '', categoryNames)
-                categoryName = result.category
-              } else {
-                console.error('[Tabwise] REORGANIZE AI failed for', tab.url, err)
+              } else if (err instanceof CategoryNotFoundError) {
+                console.warn('[Tabwise] REORGANIZE AI returned unmatchable category for', url, err.message)
                 await recordAPICall(0, 0)
-                const offlineResult = offlineCategorize(tab.url!, tab.title ?? '', categoryNames)
-                categoryName = offlineResult.category
+              } else {
+                console.error('[Tabwise] REORGANIZE AI failed for', url, err)
+                await recordAPICall(0, 0)
               }
             }
           }
 
-          if (!categoryName || !categoryNames.includes(categoryName)) {
-            categoryName = categoryNames[0]
+          if (!categoryName) {
+            metadata = await fetchPageMetadata(tabId)
+            const result = offlineCategorize(url, title, categoryNames, metadata)
+            categoryName = result.category
           }
 
           const category = matchCategory(categoryName, settings.categories)
-          await moveTabToCategory(tab.id!, tab.windowId!, category)
-          const record = tabToRecord(tab, category.name)
-          const idx = updatedRecords.findIndex(r => r.tabId === tab.id)
-          if (idx >= 0) updatedRecords[idx] = record
-          else updatedRecords.push(record)
+          await moveTabToCategory(tabId, windowId, category)
+          recordCategorizedTab(updatedRecords, tab, category.name)
           count++
-        } catch { /* tab disappeared mid-loop */ }
+        } catch (err) {
+          if (err instanceof NoCategoryDecisionError || err instanceof CategoryNotFoundError) {
+            // User-initiated bulk reorg: leave tab ungrouped silently; per-tab
+            // toasts would spam. Single-tab path (handleTab) still prompts.
+            continue
+          }
+          // tab disappeared mid-loop or other transient error — skip
+        }
       }
 
       await saveTabRecords(updatedRecords)

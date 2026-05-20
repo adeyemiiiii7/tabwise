@@ -17,6 +17,15 @@ export interface TabRecord {
   groupId?: number
 }
 
+export interface PageMetadata {
+  ogType: string | null
+  ogSiteName: string | null
+  description: string | null
+  keywords: string | null
+  schemaTypes: string[]
+  headings: string[]
+}
+
 export interface ScreenTimeEntry {
   [domain: string]: number
 }
