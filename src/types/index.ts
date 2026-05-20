@@ -5,7 +5,6 @@ export interface Category {
   name: string
   color: string
   emoji?: string
-  keywords: string[]
 }
 
 export interface TabRecord {
@@ -43,10 +42,10 @@ export interface StorageData {
 }
 
 export const DEFAULT_CATEGORIES: Category[] = [
-  { id: 'work', name: 'Work', color: '#4A90D9', keywords: ['github', 'linear', 'notion', 'jira', 'slack'] },
-  { id: 'personal', name: 'Personal', color: '#7ED321', keywords: ['gmail', 'calendar', 'photos'] },
-  { id: 'school', name: 'School', color: '#F5A623', keywords: ['coursera', 'udemy', 'khan', 'edu'] },
-  { id: 'entertainment', name: 'Entertainment', color: '#D0021B', keywords: ['youtube', 'netflix', 'twitch', 'reddit'] },
+  { id: 'work', name: 'Work', color: '#4A90D9' },
+  { id: 'personal', name: 'Personal', color: '#7ED321' },
+  { id: 'school', name: 'School', color: '#F5A623' },
+  { id: 'entertainment', name: 'Entertainment', color: '#D0021B' },
 ]
 
 export const DEFAULT_SETTINGS: Settings = {
