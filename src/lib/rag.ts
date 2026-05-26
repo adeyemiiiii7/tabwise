@@ -83,7 +83,8 @@ export async function buildRAGContext(settings: Settings): Promise<RAGContext> {
 }
 
 export async function recordAPICall(inputTokens = 0, outputTokens = 0): Promise<void> {
-  const today = new Date().toISOString().split('T')[0]
+  const _d = new Date()
+  const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`
   const result = await chrome.storage.local.get(['apiUsage', 'apiTokens'])
 
   const usage: Record<string, number> = (result.apiUsage as Record<string, number> | undefined) ?? {}

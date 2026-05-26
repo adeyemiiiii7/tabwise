@@ -298,6 +298,48 @@ td:last-child {
 }
 
 /* ── Sites view ───────────────────────────────────────────────── */
+.week-strip {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.week-day-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 0;
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  font-family: inherit;
+}
+.week-day-btn:hover { border-color: var(--text-dim); }
+.week-day-btn.active { border-color: var(--accent); background: var(--surface-2); }
+
+.wdb-label {
+  font-size: 10px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.week-day-btn.active .wdb-label { color: var(--accent); }
+
+.wdb-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1;
+}
+.week-day-btn.active .wdb-num { color: var(--accent); }
+
 .filter-row {
   display: flex;
   gap: 6px;

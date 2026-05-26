@@ -76,8 +76,10 @@ export async function clearQuotaBlock(): Promise<void> {
   await chrome.storage.local.remove('quotaBlock')
 }
 
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export function isQuotaBlockedToday(block: QuotaBlock): boolean {
-  const blockedDate = new Date(block.blockedAt).toISOString().split('T')[0]
-  const today = new Date().toISOString().split('T')[0]
-  return blockedDate === today
+  return localDateKey(new Date(block.blockedAt)) === localDateKey(new Date())
 }

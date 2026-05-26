@@ -97,6 +97,8 @@ async function doMove(tabId: number, windowId: number, category: Category): Prom
     }
   }
 
+  if (!await tabExists(tabId)) return
+
   const groupId = await createGroup(tabId)
   await chrome.tabGroups.update(groupId, {
     title: groupTitle(category),
@@ -108,6 +110,7 @@ async function doMove(tabId: number, windowId: number, category: Category): Prom
 export function moveTabToCategory(tabId: number, windowId: number, category: Category): Promise<void> {
   const key = cacheKey(windowId, category.name)
   return enqueue(key, () => doMove(tabId, windowId, category).catch(err => {
+    if (err instanceof Error && err.message.includes('Tab not found')) return
     console.error('[Tabwise] moveTabToCategory failed:', err)
   }))
 }

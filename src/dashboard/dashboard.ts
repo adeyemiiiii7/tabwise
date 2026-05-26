@@ -45,15 +45,21 @@ function fmt(s: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 
-function todayKey() { return new Date().toISOString().split('T')[0] }
+function localDateKey(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function todayKey() { return localDateKey() }
 
 function last7Days() {
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date()
     d.setDate(d.getDate() - (6 - i))
-    return d.toISOString().split('T')[0]
+    return localDateKey(d)
   })
 }
+
+let selectedSiteDay = localDateKey()
 
 function randomId() { return Math.random().toString(36).slice(2, 8) }
 const el = (id: string) => document.getElementById(id)!
@@ -252,29 +258,64 @@ async function init() {
 
   function renderSites() {
     sitesListEl.innerHTML = ''
+    const dayData = screentime[selectedSiteDay] ?? {}
+    const screentimeDomains = Object.keys(dayData)
+
+    const dayStart = new Date(selectedSiteDay + 'T00:00:00').getTime()
+    const dayEnd = dayStart + 86_400_000
+    const visitedOnDay = uniqueRecords
+      .filter(r => r.lastVisited >= dayStart && r.lastVisited < dayEnd && !dayData[r.domain])
+      .map(r => r.domain)
+
+    const allDomains = [...screentimeDomains, ...visitedOnDay]
     const filtered = sitesFilter === 'All'
-      ? uniqueRecords
-      : uniqueRecords.filter(r => r.category === sitesFilter)
-    const sorted = [...filtered].sort((a, b) => (today[b.domain] ?? 0) - (today[a.domain] ?? 0))
+      ? allDomains
+      : allDomains.filter(d => (domainMap.get(d)?.category ?? '—') === sitesFilter)
+    const sorted = [...filtered].sort((a, b) => (dayData[b] ?? 0) - (dayData[a] ?? 0))
 
     if (sorted.length === 0) {
-      sitesListEl.innerHTML = '<div class="empty-state">No sites tracked yet</div>'
+      sitesListEl.innerHTML = `<div class="empty-state">${
+        screentimeDomains.length === 0 ? 'No sites tracked on this day' : 'No sites in this category'
+      }</div>`
       return
     }
 
-    sorted.forEach(record => {
-      const time = today[record.domain] ?? 0
-      const color = catColors[record.category] ?? 'var(--text-dim)'
+    sorted.forEach(domain => {
+      const record = domainMap.get(domain)
+      const cat = record?.category ?? '—'
+      const color = catColors[cat] ?? 'var(--text-dim)'
+      const time = dayData[domain] ?? 0
       const row = document.createElement('div')
       row.className = 'site-row'
       row.innerHTML = `
-        <a href="https://${record.domain}" target="_blank" class="site-name">${record.domain}</a>
+        <a href="https://${domain}" target="_blank" class="site-name">${domain}</a>
         <span class="cat-badge">
-          <span class="cat-dot" style="background:${color}"></span>${record.category}
+          <span class="cat-dot" style="background:${color}"></span>${cat}
         </span>
         <span class="site-time">${time > 0 ? fmt(time) : '—'}</span>
       `
       sitesListEl.appendChild(row)
+    })
+  }
+
+  function buildWeekStrip() {
+    const strip = el('sites-week-strip')
+    strip.innerHTML = ''
+    last7Days().forEach(dateKey => {
+      const d = new Date(dateKey + 'T12:00:00')
+      const btn = document.createElement('button')
+      btn.className = 'week-day-btn' + (dateKey === selectedSiteDay ? ' active' : '')
+      btn.innerHTML = `
+        <span class="wdb-label">${d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+        <span class="wdb-num">${d.getDate()}</span>
+      `
+      btn.addEventListener('click', () => {
+        selectedSiteDay = dateKey
+        strip.querySelectorAll('.week-day-btn').forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        renderSites()
+      })
+      strip.appendChild(btn)
     })
   }
 
@@ -305,6 +346,7 @@ async function init() {
     filtersEl.appendChild(chip)
   })
 
+  buildWeekStrip()
   renderSites()
 
   const catsGrid = el('cats-grid')
@@ -590,13 +632,15 @@ async function refreshScreenTime() {
     })
   }
 
-  document.querySelectorAll<HTMLElement>('.site-row').forEach(row => {
-    const nameEl = row.querySelector<HTMLElement>('.site-name')
-    const timeEl = row.querySelector<HTMLElement>('.site-time')
-    if (!nameEl || !timeEl) return
-    const secs = liveSeconds(nameEl.textContent?.trim() ?? '')
-    timeEl.textContent = secs > 0 ? fmt(secs) : '—'
-  })
+  if (selectedSiteDay === todayKey()) {
+    document.querySelectorAll<HTMLElement>('.site-row').forEach(row => {
+      const nameEl = row.querySelector<HTMLElement>('.site-name')
+      const timeEl = row.querySelector<HTMLElement>('.site-time')
+      if (!nameEl || !timeEl) return
+      const secs = liveSeconds(nameEl.textContent?.trim() ?? '')
+      timeEl.textContent = secs > 0 ? fmt(secs) : '—'
+    })
+  }
 
   const records = await getTabRecords()
   const domainMap = new Map<string, typeof records[0]>()
