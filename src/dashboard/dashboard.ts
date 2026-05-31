@@ -1,5 +1,5 @@
 import { Chart, registerables } from 'chart.js'
-import { getScreenTime, getTabRecords, getSettings, saveSettings, clearAllData, getQuotaBlock, clearQuotaBlock, isQuotaBlockedToday, getSiteMemoryHints, SiteMemoryHint } from '../lib/storage'
+import { getScreenTime, saveScreenTime, getTabRecords, getSettings, saveSettings, clearAllData, getQuotaBlock, clearQuotaBlock, isQuotaBlockedToday, getSiteMemoryHints, SiteMemoryHint } from '../lib/storage'
 import { getProvider } from '../lib/ai'
 import { AIProviderName, Category } from '../types'
 
@@ -293,7 +293,15 @@ async function init() {
           <span class="cat-dot" style="background:${color}"></span>${cat}
         </span>
         <span class="site-time">${time > 0 ? fmt(time) : '—'}</span>
+        ${time > 0 ? `<button class="site-delete-btn" title="Remove from this day">✕</button>` : ''}
       `
+      if (time > 0) {
+        row.querySelector('.site-delete-btn')!.addEventListener('click', async () => {
+          delete screentime[selectedSiteDay][domain]
+          await saveScreenTime(screentime)
+          row.remove()
+        })
+      }
       sitesListEl.appendChild(row)
     })
   }

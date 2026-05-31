@@ -14,7 +14,10 @@ async function persistState(): Promise<void> {
 }
 
 export async function startTracking(url: string): Promise<void> {
-  if (!url.startsWith('http')) return
+  if (!url.startsWith('http')) {
+    await pauseTracking()
+    return
+  }
   await flushCurrent()
   activeUrl = url
   activeStart = Date.now()

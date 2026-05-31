@@ -407,6 +407,21 @@ td:last-child {
   white-space: nowrap;
 }
 
+.site-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-low);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.site-row:hover .site-delete-btn { opacity: 1; }
+.site-delete-btn:hover { color: var(--danger, #c04040); }
+
 .empty-state {
   text-align: center;
   padding: 60px 20px;
