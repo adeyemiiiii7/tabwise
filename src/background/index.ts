@@ -465,16 +465,34 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 })
 
 onAlarm(async () => {
-  const settings = await getSettings()
+  const [settings, openTabs, records] = await Promise.all([
+    getSettings(),
+    chrome.tabs.query({}),
+    getTabRecords(),
+  ])
+
   const thresholdMs = settings.inactivityThresholdHours * 60 * 60 * 1000
-  const records = await getTabRecords()
-  const stale = records.filter(r => Date.now() - r.lastVisited > thresholdMs)
+  const httpTabs = openTabs.filter(t => t.url?.startsWith('http') && t.id)
+  const openTabIds = new Set(httpTabs.map(t => t.id!))
+
+  // Prune records for tabs no longer open — prevents the list growing unboundedly
+  const pruned = records.filter(r => openTabIds.has(r.tabId))
+  if (pruned.length < records.length) await saveTabRecords(pruned)
+
+  const stale = httpTabs.filter(tab => {
+    const record = pruned.find(r => r.tabId === tab.id)
+      ?? pruned.find(r => r.domain === getDomain(tab.url!))
+    return record !== undefined && Date.now() - record.lastVisited > thresholdMs
+  })
+
   if (stale.length === 0) return
+
+  const staleDomains = [...new Set(stale.map(t => getDomain(t.url!)))]
   chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icons/48.png',
-    title: `${stale.length} inactive tabs`,
-    message: stale.map(r => getDomain(r.url)).join(', '),
+    title: `${stale.length} inactive tab${stale.length !== 1 ? 's' : ''}`,
+    message: staleDomains.join(', '),
     buttons: [{ title: 'Close all' }, { title: 'Ignore' }],
   })
 })
