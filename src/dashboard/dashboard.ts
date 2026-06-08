@@ -106,6 +106,9 @@ function showView(name: string) {
     document.querySelector(`[data-view="${v}"]`)?.classList.toggle('active', v === name)
   })
   location.hash = name === 'overview' ? '' : name
+  if (name === 'resources') {
+    renderResources().catch(err => console.error('[Tabwise] Failed to render resources view:', err))
+  }
 }
 
 document.querySelectorAll<HTMLAnchorElement>('[data-view]').forEach(a => {
@@ -983,7 +986,7 @@ async function renderResources() {
         confirmLabel: 'Close tabs',
       })) return
       const ids = heavyTabs.map(t => t.id!)
-      await Promise.all(ids.map(id => chrome.tabs.remove(id)))
+      await Promise.allSettled(ids.map(id => chrome.tabs.remove(id)))
       await renderResources()
     })
     actionsEl.appendChild(closeHeavyBtn)
@@ -1037,15 +1040,13 @@ async function renderResources() {
         message: `Close ${inactiveTabs.length} tab${inactiveTabs.length > 1 ? 's' : ''}? You can reopen them from your browser history.`,
         confirmLabel: 'Close all',
       })) return
-      await Promise.all(inactiveTabs.map(t => chrome.tabs.remove(t.tab.id!)))
-      inactiveTbody.innerHTML = `<tr><td colspan="4" class="res-empty">All inactive tabs closed</td></tr>`
-      inactiveActionsEl.innerHTML = ''
+      await Promise.allSettled(inactiveTabs.map(t => chrome.tabs.remove(t.tab.id!)))
+      await renderResources()
     })
     inactiveActionsEl.appendChild(closeAllBtn)
   }
 }
 
-document.querySelector('[data-view="resources"]')?.addEventListener('click', () => {
-  setTimeout(renderResources, 50)
+el('res-refresh-btn')?.addEventListener('click', () => {
+  renderResources().catch(err => console.error('[Tabwise] Failed to render resources view:', err))
 })
-el('res-refresh-btn')?.addEventListener('click', renderResources)

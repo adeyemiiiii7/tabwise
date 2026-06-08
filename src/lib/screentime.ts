@@ -9,6 +9,11 @@ function todayKey(): string {
 let activeUrl: string | null = null
 let activeStart: number | null = null
 
+// A single tracked stretch is flushed at least every 30s (interval + tab/window events),
+// so a real session never has a large gap. A bigger jump means the machine slept or the
+// worker was frozen — that wall-clock time was not screen time, so it must not be counted.
+const MAX_SESSION_GAP_SECONDS = 5 * 60
+
 async function persistState(): Promise<void> {
   await chrome.storage.local.set({ screentimeActive: { url: activeUrl } })
 }
@@ -29,9 +34,8 @@ export async function flushCurrent(): Promise<void> {
 
   const domain = getDomain(activeUrl)
   const elapsed = Math.floor((Date.now() - activeStart) / 1000)
-  if (elapsed <= 0) return
-
   activeStart = Date.now()
+  if (elapsed <= 0 || elapsed > MAX_SESSION_GAP_SECONDS) return
 
   const data = await getScreenTime()
   const today = todayKey()
@@ -60,8 +64,9 @@ export async function resumeTracking(): Promise<void> {
 
 export function getActiveTime(): { domain: string | null; elapsed: number } {
   if (activeStart === null || !activeUrl) return { domain: null, elapsed: 0 }
+  const elapsed = Math.floor((Date.now() - activeStart) / 1000)
   return {
     domain: getDomain(activeUrl),
-    elapsed: Math.floor((Date.now() - activeStart) / 1000),
+    elapsed: elapsed > MAX_SESSION_GAP_SECONDS ? 0 : elapsed,
   }
 }
