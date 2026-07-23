@@ -25,13 +25,16 @@
   ],
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.42",
     "@types/node": "^25.8.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.13"
+    "vite": "^8.0.13",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "chart.js": "^4.5.1"

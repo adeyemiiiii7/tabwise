@@ -1,5 +1,5 @@
 import { Chart, registerables } from 'chart.js'
-import { getScreenTime, saveScreenTime, getTabRecords, getSettings, saveSettings, clearAllData, getQuotaBlock, clearQuotaBlock, isQuotaBlockedToday, getSiteMemoryHints, SiteMemoryHint } from '../lib/storage'
+import { getScreenTime, getTabRecords, getSettings, saveSettings, clearAllData, getQuotaBlock, clearQuotaBlock, isQuotaBlockedToday, getSiteMemoryHints, SiteMemoryHint } from '../lib/storage'
 import { getProvider } from '../lib/ai'
 import { AIProviderName, Category } from '../types'
 
@@ -300,8 +300,15 @@ async function init() {
       `
       if (time > 0) {
         row.querySelector('.site-delete-btn')!.addEventListener('click', async () => {
+          // Deletion goes through the service worker so it serializes against the
+          // 30s screen-time flush — a direct write from this page could be clobbered.
+          const reply = await chrome.runtime.sendMessage({
+            type: 'DELETE_SITE_TIME',
+            date: selectedSiteDay,
+            domain,
+          }) as { success: boolean }
+          if (!reply.success) return
           delete screentime[selectedSiteDay][domain]
-          await saveScreenTime(screentime)
           row.remove()
         })
       }

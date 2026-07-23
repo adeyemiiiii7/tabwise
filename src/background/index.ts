@@ -4,12 +4,12 @@ import { isValidTab, tabToRecord, getDomain } from '../lib/tabs'
 import { moveTabToCategory, moveGroupToNewWindow, invalidateGroupCache, colorFromHex } from '../lib/groups'
 import { startTracking, flushCurrent, pauseTracking, getActiveTime, resumeTracking } from '../lib/screentime'
 import { setupAlarm, onAlarm } from '../lib/scheduler'
-import { getTabRecords, saveTabRecords, getQuotaBlock, setQuotaBlock, clearQuotaBlock, isQuotaBlockedToday } from '../lib/storage'
+import { getTabRecords, updateTabRecords, updateScreenTime, getStaleTabIds, saveStaleTabIds, getQuotaBlock, setQuotaBlock, clearQuotaBlock, isQuotaBlockedToday } from '../lib/storage'
 import { matchCategory, CategoryNotFoundError } from '../lib/categorizer'
 import { buildRAGContext, recordAPICall } from '../lib/rag'
 import { offlineCategorize, NoCategoryDecisionError } from '../lib/offlineCategorizer'
 import { isAmbiguous } from '../lib/knownSites'
-import { PageMetadata, Category } from '../types'
+import { PageMetadata, Category, TabRecord } from '../types'
 
 let cachedRAGContext: Awaited<ReturnType<typeof buildRAGContext>> | null = null
 
@@ -193,17 +193,8 @@ function sendToast(
 }
 
 async function updateRecord(tab: chrome.tabs.Tab, categoryName: string) {
-  const records = await getTabRecords()
   const record = tabToRecord(tab, categoryName)
-  const updated = records.filter(r => r.tabId !== tab.id)
-  await saveTabRecords([...updated, record])
-}
-
-function recordCategorizedTab(records: import('../types').TabRecord[], tab: chrome.tabs.Tab, categoryName: string): void {
-  const record = tabToRecord(tab, categoryName)
-  const idx = records.findIndex(r => r.tabId === tab.id)
-  if (idx >= 0) records[idx] = record
-  else records.push(record)
+  await updateTabRecords(records => [...records.filter(r => r.tabId !== tab.id), record])
 }
 
 chrome.tabs.onCreated.addListener(tab => {
@@ -243,6 +234,26 @@ chrome.windows.onFocusChanged.addListener(async windowId => {
 
 setInterval(() => { flushCurrent().catch(() => {}) }, 30_000)
 
+const IDLE_DETECTION_SECONDS = 60
+
+chrome.idle.setDetectionInterval(IDLE_DETECTION_SECONDS)
+chrome.idle.onStateChanged.addListener(state => {
+  ;(async () => {
+    if (state === 'active') {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+      if (tab?.url) await startTracking(tab.url)
+      return
+    }
+    if (state === 'idle') {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+      // No input for a minute but the tab is playing audio/video — the user is
+      // watching or listening, so that still counts as screen time.
+      if (tab?.audible) return
+    }
+    await pauseTracking()
+  })().catch(() => {})
+})
+
 chrome.tabs.onRemoved.addListener(tabId => {
   lastHandled.delete(tabId)
   flushCurrent().catch(() => {})
@@ -257,6 +268,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === 'GET_ACTIVE_TIME') {
     sendResponse(getActiveTime())
+    return true
+  }
+
+  if (message.type === 'DELETE_SITE_TIME') {
+    ;(async () => {
+      try {
+        await updateScreenTime(data => {
+          const day = { ...data[message.date] }
+          delete day[message.domain]
+          return { ...data, [message.date]: day }
+        })
+        sendResponse({ success: true })
+      } catch { sendResponse({ success: false }) }
+    })()
     return true
   }
 
@@ -287,11 +312,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           invalidateRAGCache()
         }
 
-        const records = await getTabRecords()
-        const updated = records.map(r =>
+        await updateTabRecords(records => records.map(r =>
           r.tabId === message.tabId ? { ...r, category: category.name } : r
-        )
-        await saveTabRecords(updated)
+        ))
         sendResponse({ success: true })
       } catch { sendResponse({ success: false }) }
     })()
@@ -395,8 +418,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (!inOfflineMode) ragContext = await getRAGContext(settings)
 
       let count = 0
-      const records = await getTabRecords()
-      const updatedRecords = [...records]
 
       for (const tab of validTabs) {
         const tabId = tab.id!
@@ -409,7 +430,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           if (learned[domain] && categoryNames.includes(learned[domain])) {
             const category = matchCategory(learned[domain], settings.categories)
             await moveTabToCategory(tabId, windowId, category)
-            recordCategorizedTab(updatedRecords, tab, category.name)
+            await updateRecord(tab, category.name)
             count++
             continue
           }
@@ -443,7 +464,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
           const category = matchCategory(categoryName, settings.categories)
           await moveTabToCategory(tabId, windowId, category)
-          recordCategorizedTab(updatedRecords, tab, category.name)
+          await updateRecord(tab, category.name)
           count++
         } catch (err) {
           if (err instanceof NoCategoryDecisionError || err instanceof CategoryNotFoundError) {
@@ -455,7 +476,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
       }
 
-      await saveTabRecords(updatedRecords)
       sendResponse({ success: true, count })
     })()
     return true
@@ -464,11 +484,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false
 })
 
+const STALE_TABS_NOTIFICATION_ID = 'tabwise-stale-tabs'
+
 onAlarm(async () => {
-  const [settings, openTabs, records] = await Promise.all([
+  const [settings, openTabs] = await Promise.all([
     getSettings(),
     chrome.tabs.query({}),
-    getTabRecords(),
   ])
 
   const thresholdMs = settings.inactivityThresholdHours * 60 * 60 * 1000
@@ -476,8 +497,11 @@ onAlarm(async () => {
   const openTabIds = new Set(httpTabs.map(t => t.id!))
 
   // Prune records for tabs no longer open — prevents the list growing unboundedly
-  const pruned = records.filter(r => openTabIds.has(r.tabId))
-  if (pruned.length < records.length) await saveTabRecords(pruned)
+  let pruned: TabRecord[] = []
+  await updateTabRecords(records => {
+    pruned = records.filter(r => openTabIds.has(r.tabId))
+    return pruned
+  })
 
   const stale = httpTabs.filter(tab => {
     const record = pruned.find(r => r.tabId === tab.id)
@@ -487,12 +511,26 @@ onAlarm(async () => {
 
   if (stale.length === 0) return
 
+  await saveStaleTabIds(stale.map(t => t.id!))
   const staleDomains = [...new Set(stale.map(t => getDomain(t.url!)))]
-  chrome.notifications.create({
+  chrome.notifications.create(STALE_TABS_NOTIFICATION_ID, {
     type: 'basic',
     iconUrl: 'icons/48.png',
     title: `${stale.length} inactive tab${stale.length !== 1 ? 's' : ''}`,
     message: staleDomains.join(', '),
     buttons: [{ title: 'Close all' }, { title: 'Ignore' }],
   })
+})
+
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  if (notificationId !== STALE_TABS_NOTIFICATION_ID) return
+  chrome.notifications.clear(notificationId)
+  if (buttonIndex !== 0) return
+  ;(async () => {
+    const [staleIds, openTabs] = await Promise.all([getStaleTabIds(), chrome.tabs.query({})])
+    const openIds = new Set(openTabs.map(t => t.id).filter((id): id is number => id !== undefined))
+    const closable = staleIds.filter(id => openIds.has(id))
+    if (closable.length > 0) await chrome.tabs.remove(closable)
+    await saveStaleTabIds([])
+  })().catch(err => console.error('[Tabwise] Failed to close stale tabs:', err))
 })

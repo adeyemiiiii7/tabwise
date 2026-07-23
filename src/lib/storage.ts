@@ -1,8 +1,27 @@
 import { Settings, ScreenTimeData, TabRecord, DEFAULT_SETTINGS } from '../types'
 
+// Serializes read-modify-write cycles within this JS context. Concurrent tab events
+// (session restore, link bursts) would otherwise read the same snapshot and the last
+// write would silently drop the others' changes.
+let writeQueue: Promise<unknown> = Promise.resolve()
+
+function enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const run = writeQueue.then(operation, operation)
+  writeQueue = run.then(() => undefined, () => undefined)
+  return run
+}
+
+let cachedSettings: Settings | null = null
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.settings) cachedSettings = null
+})
+
 export async function getSettings(): Promise<Settings> {
+  if (cachedSettings) return cachedSettings
   const result = await chrome.storage.local.get('settings')
-  return (result.settings as Settings | undefined) ?? DEFAULT_SETTINGS
+  cachedSettings = (result.settings as Settings | undefined) ?? DEFAULT_SETTINGS
+  return cachedSettings
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
@@ -14,8 +33,11 @@ export async function getScreenTime(): Promise<ScreenTimeData> {
   return (result.screentime as ScreenTimeData | undefined) ?? {}
 }
 
-export async function saveScreenTime(data: ScreenTimeData): Promise<void> {
-  await chrome.storage.local.set({ screentime: data })
+export async function updateScreenTime(mutate: (data: ScreenTimeData) => ScreenTimeData): Promise<void> {
+  await enqueueWrite(async () => {
+    const data = await getScreenTime()
+    await chrome.storage.local.set({ screentime: mutate(data) })
+  })
 }
 
 export async function getTabRecords(): Promise<TabRecord[]> {
@@ -23,8 +45,11 @@ export async function getTabRecords(): Promise<TabRecord[]> {
   return (result.tabs as TabRecord[] | undefined) ?? []
 }
 
-export async function saveTabRecords(tabs: TabRecord[]): Promise<void> {
-  await chrome.storage.local.set({ tabs })
+export async function updateTabRecords(mutate: (records: TabRecord[]) => TabRecord[]): Promise<void> {
+  await enqueueWrite(async () => {
+    const records = await getTabRecords()
+    await chrome.storage.local.set({ tabs: mutate(records) })
+  })
 }
 
 export async function getLearnedSites(): Promise<Record<string, string>> {
@@ -33,12 +58,15 @@ export async function getLearnedSites(): Promise<Record<string, string>> {
 }
 
 export async function saveLearnedSite(domain: string, category: string): Promise<void> {
-  const current = await getLearnedSites()
-  await chrome.storage.local.set({ learnedSites: { ...current, [domain]: category } })
+  await enqueueWrite(async () => {
+    const current = await getLearnedSites()
+    await chrome.storage.local.set({ learnedSites: { ...current, [domain]: category } })
+  })
 }
 
 export async function clearAllData(): Promise<void> {
   await chrome.storage.local.clear()
+  cachedSettings = null
 }
 
 export interface SiteMemoryHint {
@@ -54,8 +82,10 @@ export async function getSiteMemoryHints(): Promise<Record<string, SiteMemoryHin
 }
 
 export async function saveSiteMemoryHint(domain: string, hint: SiteMemoryHint): Promise<void> {
-  const current = await getSiteMemoryHints()
-  await chrome.storage.local.set({ siteMemoryHints: { ...current, [domain]: hint } })
+  await enqueueWrite(async () => {
+    const current = await getSiteMemoryHints()
+    await chrome.storage.local.set({ siteMemoryHints: { ...current, [domain]: hint } })
+  })
 }
 
 export interface QuotaBlock {
@@ -74,6 +104,15 @@ export async function setQuotaBlock(provider: string): Promise<void> {
 
 export async function clearQuotaBlock(): Promise<void> {
   await chrome.storage.local.remove('quotaBlock')
+}
+
+export async function getStaleTabIds(): Promise<number[]> {
+  const result = await chrome.storage.local.get('staleTabIds')
+  return (result.staleTabIds as number[] | undefined) ?? []
+}
+
+export async function saveStaleTabIds(tabIds: number[]): Promise<void> {
+  await chrome.storage.local.set({ staleTabIds: tabIds })
 }
 
 function localDateKey(d: Date): string {

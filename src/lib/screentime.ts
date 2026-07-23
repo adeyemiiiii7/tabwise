@@ -1,4 +1,4 @@
-import { getScreenTime, saveScreenTime } from './storage'
+import { updateScreenTime } from './storage'
 import { getDomain } from './tabs'
 
 function todayKey(): string {
@@ -37,11 +37,12 @@ export async function flushCurrent(): Promise<void> {
   activeStart = Date.now()
   if (elapsed <= 0 || elapsed > MAX_SESSION_GAP_SECONDS) return
 
-  const data = await getScreenTime()
   const today = todayKey()
-  if (!data[today]) data[today] = {}
-  data[today][domain] = (data[today][domain] ?? 0) + elapsed
-  await saveScreenTime(data)
+  await updateScreenTime(data => {
+    const day = { ...data[today] }
+    day[domain] = (day[domain] ?? 0) + elapsed
+    return { ...data, [today]: day }
+  })
 }
 
 export async function pauseTracking(): Promise<void> {

@@ -229,15 +229,31 @@ function analyzeMetadata(metadata: PageMetadata | null): Signal[] {
   return signals
 }
 
-function resolveCategory(canonical: string, categoryNames: string[]): string {
+// Signals emit canonical category names. Users can rename their categories to anything
+// ("Gaming", "Uni", "Side Projects"), so each canonical maps to common synonyms that are
+// matched word-by-word against the user's category names.
+const CANONICAL_SYNONYMS: Record<string, string[]> = {
+  work: ['job', 'jobs', 'office', 'business', 'career', 'professional', 'dev', 'development', 'code', 'coding', 'programming', 'engineering', 'productivity', 'project', 'projects', 'tech', 'freelance'],
+  personal: ['life', 'social', 'shopping', 'finance', 'finances', 'home', 'family', 'lifestyle', 'health', 'misc', 'other', 'errands'],
+  school: ['study', 'studies', 'studying', 'education', 'learning', 'uni', 'university', 'college', 'academic', 'academics', 'research', 'class', 'classes', 'course', 'courses', 'homework'],
+  entertainment: ['fun', 'game', 'games', 'gaming', 'media', 'video', 'videos', 'music', 'movie', 'movies', 'show', 'shows', 'tv', 'streaming', 'leisure', 'sports', 'anime'],
+}
+
+function tryResolveCategory(canonical: string, categoryNames: string[]): string | null {
   const lower = canonical.toLowerCase()
-  const result = (
+  const direct = (
     categoryNames.find(c => c.toLowerCase() === lower) ??
     categoryNames.find(c => c.toLowerCase().includes(lower)) ??
     categoryNames.find(c => lower.includes(c.toLowerCase()))
   )
-  if (!result) throw new CategoryNotFoundError(canonical)
-  return result
+  if (direct) return direct
+
+  const synonyms = CANONICAL_SYNONYMS[lower]
+  if (!synonyms) return null
+  return categoryNames.find(name => {
+    const words = name.toLowerCase().split(/[^a-z0-9]+/)
+    return synonyms.some(synonym => words.includes(synonym))
+  }) ?? null
 }
 
 export function offlineCategorize(
@@ -255,7 +271,10 @@ export function offlineCategorize(
 
   const known = lookupKnownSite(domain)
   if (known) {
-    return { category: resolveCategory(known, categoryNames), confidence: 'high' }
+    const resolved = tryResolveCategory(known, categoryNames)
+    // If the known-site canonical doesn't map to any user category, fall through
+    // to signal analysis — another canonical might still resolve.
+    if (resolved) return { category: resolved, confidence: 'high' }
   }
 
   const sources: Record<SignalSource, Signal[]> = {
@@ -275,13 +294,17 @@ export function offlineCategorize(
   }
 
   const ranked = Object.entries(scores).sort(([, a], [, b]) => b - a)
-  const [topCanonical, topScore] = ranked[0]
-  const resolved = resolveCategory(topCanonical, categoryNames)
 
-  const sourceCount = (Object.keys(sources) as SignalSource[]).filter(
-    src => sources[src].some(s => s.category === topCanonical),
-  ).length
-  const confidence: 'high' | 'low' = (topScore >= 5 || sourceCount >= 2) ? 'high' : 'low'
+  for (const [canonical, score] of ranked) {
+    const resolved = tryResolveCategory(canonical, categoryNames)
+    if (!resolved) continue
 
-  return { category: resolved, confidence }
+    const sourceCount = (Object.keys(sources) as SignalSource[]).filter(
+      src => sources[src].some(s => s.category === canonical),
+    ).length
+    const confidence: 'high' | 'low' = (score >= 5 || sourceCount >= 2) ? 'high' : 'low'
+    return { category: resolved, confidence }
+  }
+
+  throw new CategoryNotFoundError(ranked[0][0])
 }
