@@ -33,10 +33,16 @@ export async function getScreenTime(): Promise<ScreenTimeData> {
   return (result.screentime as ScreenTimeData | undefined) ?? {}
 }
 
-export async function updateScreenTime(mutate: (data: ScreenTimeData) => ScreenTimeData): Promise<void> {
+export async function updateScreenTime(
+  mutate: (data: ScreenTimeData) => ScreenTimeData,
+  activeState?: { url: string | null; startedAt: number | null },
+): Promise<void> {
   await enqueueWrite(async () => {
     const data = await getScreenTime()
-    await chrome.storage.local.set({ screentime: mutate(data) })
+    await chrome.storage.local.set({
+      screentime: mutate(data),
+      ...(activeState === undefined ? {} : { screentimeActive: activeState }),
+    })
   })
 }
 

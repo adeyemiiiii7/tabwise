@@ -2,7 +2,8 @@ import { getSettings, getLearnedSites, saveLearnedSite, saveSiteMemoryHint } fro
 import { getProvider, QuotaExceededError } from '../lib/ai'
 import { isValidTab, tabToRecord, getDomain } from '../lib/tabs'
 import { moveTabToCategory, moveGroupToNewWindow, invalidateGroupCache, colorFromHex } from '../lib/groups'
-import { startTracking, flushCurrent, pauseTracking, getActiveTime, resumeTracking } from '../lib/screentime'
+import { getActiveTime } from '../lib/screentime'
+import { setupScreenTimeTracking } from '../lib/trackingEvents'
 import { setupAlarm, onAlarm } from '../lib/scheduler'
 import { getTabRecords, updateTabRecords, updateScreenTime, getStaleTabIds, saveStaleTabIds, getQuotaBlock, setQuotaBlock, clearQuotaBlock, isQuotaBlockedToday } from '../lib/storage'
 import { matchCategory, CategoryNotFoundError } from '../lib/categorizer'
@@ -31,15 +32,7 @@ const lastHandled = new Map<number, string>()
 // Held during settings sync so handleTab skips and avoids creating race duplicates.
 let syncLock = false
 
-// On every SW activation: recover which URL was being tracked before SW was killed,
-// then find the actual active tab and start fresh tracking from now.
-;(async () => {
-  await resumeTracking()
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-    if (tab?.url) await startTracking(tab.url)
-  } catch { /* no active tab yet */ }
-})()
+const screenTimeTracking = setupScreenTimeTracking()
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings()
@@ -90,13 +83,22 @@ async function applyOfflineDecision(
 }
 
 async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
+  try {
+    await categorizeTab(tab)
+  } catch (err) {
+    // A transient browser/API failure must not suppress retries on the next load.
+    if (tab.id !== undefined && lastHandled.get(tab.id) === tab.url) lastHandled.delete(tab.id)
+    throw err
+  }
+}
+
+async function categorizeTab(tab: chrome.tabs.Tab): Promise<void> {
   const url = tab.url ?? ''
   const title = tab.title ?? ''
   if (!isValidTab(url) || !tab.id || !tab.windowId) return
   if (syncLock) return
 
   if (lastHandled.get(tab.id) === url) return
-  lastHandled.set(tab.id, url)
 
   try {
     const win = await chrome.windows.get(tab.windowId)
@@ -105,6 +107,8 @@ async function handleTab(tab: chrome.tabs.Tab): Promise<void> {
 
   const settings = await getSettings()
   if (!settings.onboardingComplete) return
+  if (syncLock || lastHandled.get(tab.id) === url) return
+  lastHandled.set(tab.id, url)
 
   const tabId = tab.id
   const windowId = tab.windowId
@@ -214,55 +218,19 @@ chrome.tabs.onUpdated.addListener((_, changeInfo, tab) => {
   handleTab(tab).catch(() => {})
 })
 
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  try {
-    const tab = await chrome.tabs.get(tabId)
-    if (tab.url) await startTracking(tab.url)
-  } catch { /* tab gone */ }
-})
-
-chrome.windows.onFocusChanged.addListener(async windowId => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) {
-    pauseTracking().catch(() => {})
-    return
-  }
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, windowId })
-    if (tab?.url) await startTracking(tab.url)
-  } catch { /* window gone */ }
-})
-
-setInterval(() => { flushCurrent().catch(() => {}) }, 30_000)
-
-const IDLE_DETECTION_SECONDS = 60
-
-chrome.idle.setDetectionInterval(IDLE_DETECTION_SECONDS)
-chrome.idle.onStateChanged.addListener(state => {
-  ;(async () => {
-    if (state === 'active') {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-      if (tab?.url) await startTracking(tab.url)
-      return
-    }
-    if (state === 'idle') {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-      // No input for a minute but the tab is playing audio/video — the user is
-      // watching or listening, so that still counts as screen time.
-      if (tab?.audible) return
-    }
-    await pauseTracking()
-  })().catch(() => {})
-})
-
 chrome.tabs.onRemoved.addListener(tabId => {
   lastHandled.delete(tabId)
-  flushCurrent().catch(() => {})
 })
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'INVALIDATE_CACHE') {
     invalidateRAGCache()
     sendResponse({ success: true })
+    return true
+  }
+
+  if (message.type === 'GET_SCREEN_TIME') {
+    screenTimeTracking.snapshot().then(sendResponse).catch(() => sendResponse(null))
     return true
   }
 
@@ -411,7 +379,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const categoryNames = settings.categories.map(c => c.name)
       const learned = await getLearnedSites()
       const quotaBlock = await getQuotaBlock()
-      const inOfflineMode = !settings.apiKey || !(settings.useAI ?? true) || !!(quotaBlock && isQuotaBlockedToday(quotaBlock))
+      let inOfflineMode = !settings.apiKey || !(settings.useAI ?? true) || !!(quotaBlock && isQuotaBlockedToday(quotaBlock))
 
       let ragContext: Awaited<ReturnType<typeof buildRAGContext>> | null = null
       let provider = inOfflineMode ? null : getProvider(settings.provider, settings.apiKey)
@@ -445,6 +413,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
               await recordAPICall(result.inputTokens, result.outputTokens)
             } catch (err) {
               if (err instanceof QuotaExceededError) {
+                inOfflineMode = true
                 await handleQuotaExceeded(err.provider)
               } else if (err instanceof CategoryNotFoundError) {
                 console.warn('[Tabwise] REORGANIZE AI returned unmatchable category for', url, err.message)
@@ -477,7 +446,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
 
       sendResponse({ success: true, count })
-    })()
+    })().catch(() => sendResponse({ success: false, count: 0 }))
     return true
   }
 

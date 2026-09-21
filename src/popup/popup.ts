@@ -1,6 +1,9 @@
-import { getScreenTime, getTabRecords, getSettings } from '../lib/storage'
+import { localDateKey, localDayStart } from '../lib/dates'
+import { readScreenTime } from '../lib/screenTimeClient'
+import { getTabRecords, getSettings } from '../lib/storage'
 
 function fmt(s: number): string {
+  s = Math.floor(s)
   if (s < 60) return `${s}s`
   if (s < 3600) return `${Math.floor(s / 60)}m`
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
@@ -15,36 +18,27 @@ function cssColor(color: string | undefined): string {
 }
 
 function todayKey(): string {
-  return new Date().toISOString().split('T')[0]
+  return localDateKey()
 }
 
 const el = (id: string) => document.getElementById(id)!
 
-async function getLiveTime(): Promise<{ domain: string | null; elapsed: number }> {
-  try {
-    return await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TIME' })
-  } catch {
-    return { domain: null, elapsed: 0 }
-  }
-}
-
 async function renderStats() {
-  const [screentime, records, live] = await Promise.all([
-    getScreenTime(),
+  const [screentime, records] = await Promise.all([
+    readScreenTime(),
     getTabRecords(),
-    getLiveTime(),
   ])
 
   const today = screentime[todayKey()] ?? {}
 
   function liveSeconds(domain: string): number {
-    return (today[domain] ?? 0) + (domain === live.domain ? live.elapsed : 0)
+    return today[domain] ?? 0
   }
 
-  const allDomains = new Set([...Object.keys(today), ...(live.domain ? [live.domain] : [])])
+  const allDomains = new Set(Object.keys(today))
 
   const totalSeconds = Array.from(allDomains).reduce((sum, d) => sum + liveSeconds(d), 0)
-  const todayStart = new Date(todayKey()).getTime()
+  const todayStart = localDayStart()
   const organisedToday = records.filter(r => r.lastVisited >= todayStart).length
 
   el('time-today').textContent = fmt(totalSeconds)
@@ -66,9 +60,6 @@ async function renderStats() {
         const record = records.find(r => r.domain === domain)
         el('active-category').textContent = record?.category ?? '—'
       }
-    } else if (live.domain) {
-      const record = records.find(r => r.domain === live.domain)
-      el('active-category').textContent = record?.category ?? '—'
     } else {
       el('active-category').textContent = '—'
     }
@@ -125,42 +116,47 @@ async function init() {
     modeDesc.textContent = `Tabs classified by ${settings.provider === 'claude' ? 'Claude' : settings.provider === 'gemini' ? 'Gemini' : 'OpenAI'}`
   }
 
-  await renderStats()
+  await renderStats().catch(err => console.error('[Tabwise] Statistics unavailable:', err))
 
-  setInterval(renderStats, 10_000)
+  setInterval(() => { void renderStats().catch(() => {}) }, 10_000)
 
-  const currentWindow = await chrome.windows.getCurrent()
-  if (currentWindow.id) {
-    const groups = await chrome.tabGroups.query({ windowId: currentWindow.id })
-    const groupsList = el('groups-list')
+  try {
+    const currentWindow = await chrome.windows.getCurrent()
+    if (currentWindow.id) {
+      const groups = await chrome.tabGroups.query({ windowId: currentWindow.id })
+      const groupsList = el('groups-list')
 
-    if (groups.length === 0) {
-      groupsList.innerHTML = '<p class="no-groups">No groups yet — hit Reorganize</p>'
-    } else {
-      el('groups-window-label').textContent = `· this window`
-      groups.forEach(group => {
-        const row = document.createElement('div')
-        row.className = 'group-row'
-        row.innerHTML = `
-          <span class="group-dot" style="background:${cssColor(group.color)}"></span>
-          <span class="group-name">${group.title ?? 'Untitled'}</span>
-          <button class="move-btn" data-title="${group.title}">→ New window</button>
-        `
-        groupsList.appendChild(row)
-      })
+      if (groups.length === 0) {
+        groupsList.innerHTML = '<p class="no-groups">No groups yet — hit Reorganize</p>'
+      } else {
+        el('groups-window-label').textContent = `· this window`
+        groups.forEach(group => {
+          const row = document.createElement('div')
+          row.className = 'group-row'
+          row.innerHTML = `
+            <span class="group-dot" style="background:${cssColor(group.color)}"></span>
+            <span class="group-name">${group.title ?? 'Untitled'}</span>
+            <button class="move-btn" data-title="${group.title}">→ New window</button>
+          `
+          groupsList.appendChild(row)
+        })
 
-      groupsList.querySelectorAll<HTMLButtonElement>('.move-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const title = btn.dataset.title ?? ''
-          btn.textContent = 'Moving...'
-          btn.disabled = true
-          chrome.runtime.sendMessage({ type: 'MOVE_GROUP_TO_WINDOW', groupTitle: title }, res => {
-            btn.textContent = res?.success ? 'Moved!' : 'Failed'
-            setTimeout(() => { btn.textContent = '→ New window'; btn.disabled = false }, 2000)
+        groupsList.querySelectorAll<HTMLButtonElement>('.move-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const title = btn.dataset.title ?? ''
+            btn.textContent = 'Moving...'
+            btn.disabled = true
+            chrome.runtime.sendMessage({ type: 'MOVE_GROUP_TO_WINDOW', groupTitle: title }, res => {
+              btn.textContent = res?.success ? 'Moved!' : 'Failed'
+              setTimeout(() => { btn.textContent = '→ New window'; btn.disabled = false }, 2000)
+            })
           })
         })
-      })
+      }
     }
+
+  } catch {
+    el('groups-list').textContent = 'Tab groups are temporarily unavailable.'
   }
 
   el('btn-dashboard').addEventListener('click', () => {

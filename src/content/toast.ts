@@ -2,8 +2,7 @@
 // "ask" mode  — persistent with dismiss option; user should pick but can decline
 // "confirm" mode — auto-dismisses in 8s; user can still correct or close immediately
 
-let dismissTimer: ReturnType<typeof setTimeout> | null = null
-let activeToast: HTMLDivElement | null = null
+let dismissActiveToast: (() => void) | null = null
 
 // Checks whether the extension context is still valid before using any chrome.* API.
 // After a reload, chrome.runtime.id becomes undefined and chrome.* calls throw.
@@ -18,19 +17,29 @@ function showToast(
   tabId: number,
   mode: 'ask' | 'confirm'
 ) {
-  if (activeToast) activeToast.remove()
-  if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
+  dismissActiveToast?.()
+  let dismissTimer: ReturnType<typeof setTimeout> | null = null
 
   const isAsk = mode === 'ask'
 
   const toast = document.createElement('div')
   toast.id = 'tabwise-toast'
-  activeToast = toast
+  const host = document.createElement('div')
+  host.id = 'tabwise-toast-host'
+  host.style.setProperty('all', 'initial', 'important')
+  host.style.setProperty('display', 'contents', 'important')
+  const shadow = host.attachShadow({ mode: 'closed' })
+  shadow.appendChild(toast)
 
   toast.innerHTML = `
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+      *, *::before, *::after { box-sizing: border-box; }
+      button { appearance: none; position: static; }
       #tabwise-toast {
+        color-scheme: dark;
+        text-align: left;
+        direction: ltr;
+        line-height: normal;
         position: fixed;
         bottom: 24px;
         right: 24px;
@@ -161,11 +170,11 @@ function showToast(
     </div>
 
     <div class="tw-body">
-      <div class="tw-domain">${domain}</div>
+      <div class="tw-domain"></div>
       <div class="tw-question">
         ${isAsk
           ? 'Where does this tab belong?'
-          : `Moved to <strong>${category}</strong>. Correct?`}
+          : 'Moved to <strong></strong>. Correct?'}
       </div>
     </div>
 
@@ -177,7 +186,10 @@ function showToast(
     </div>
   `
 
-  document.body.appendChild(toast)
+  toast.querySelector('.tw-domain')!.textContent = domain
+  const categoryLabel = toast.querySelector('strong')
+  if (categoryLabel) categoryLabel.textContent = category
+  document.documentElement.appendChild(host)
 
   // ── Close / dismiss ────────────────────────────────────────
 
@@ -186,9 +198,11 @@ function showToast(
     // Clean up document-level drag listeners to prevent accumulation
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
-    toast.remove()
-    activeToast = null
+    host.remove()
+    if (dismissActiveToast === dismiss) dismissActiveToast = null
   }
+
+  dismissActiveToast = dismiss
 
   toast.querySelector<HTMLButtonElement>('#tw-close-btn')?.addEventListener('click', dismiss)
   toast.querySelector<HTMLButtonElement>('#tw-skip-btn')?.addEventListener('click', dismiss)
@@ -214,12 +228,12 @@ function showToast(
             tabId,
             category: cat,
             learnDomain: domain,
-          })
+          }).catch(() => {})
         } catch { /* context invalidated mid-call — ignore */ }
       }
       catList.querySelectorAll('.tw-btn').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
-      setTimeout(dismiss, 600)
+      dismissTimer = setTimeout(dismiss, 600)
     })
     catList.appendChild(btn)
   })
@@ -340,6 +354,7 @@ try {
     try {
       if (msg.type === 'SHOW_TOAST') {
         showToast(msg.domain, msg.category, msg.categories, msg.tabId, msg.mode)
+        sendResponse({ success: true })
         return false
       }
       if (msg.type === 'GET_PAGE_METADATA') {
@@ -379,6 +394,6 @@ setTimeout(() => {
       heapMB,
       hasVideo,
       hasCanvas,
-    })
+    }).catch(() => {})
   } catch { /* context invalidated mid-call */ }
 }, 2000)

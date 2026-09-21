@@ -16,12 +16,14 @@ function cacheKey(windowId: number, categoryName: string): string {
   return `${windowId}:${categoryName}`
 }
 
-// Serialises mutations per window+category to prevent concurrent handleTab calls from creating duplicate groups.
+// Browser tab-strip mutations must be serialized across categories in a window.
 const groupQueues = new Map<string, Promise<void>>()
 
 function enqueue(key: string, op: () => Promise<void>): Promise<void> {
   const prev = groupQueues.get(key) ?? Promise.resolve()
-  const next = prev.then(op, op) // keep the queue draining even if op throws
+  const next = prev.then(op, op).finally(() => {
+    if (groupQueues.get(key) === next) groupQueues.delete(key)
+  })
   groupQueues.set(key, next)
   return next
 }
@@ -69,7 +71,8 @@ async function doMove(tabId: number, windowId: number, category: Category): Prom
   const cached = groupCache.get(key)
   if (cached !== undefined) {
     try {
-      await chrome.tabGroups.get(cached)
+      const group = await chrome.tabGroups.get(cached)
+      if (group.windowId !== windowId) throw new Error('Group moved to another window')
       await groupTab(tabId, cached)
       return
     } catch {
@@ -108,11 +111,7 @@ async function doMove(tabId: number, windowId: number, category: Category): Prom
 }
 
 export function moveTabToCategory(tabId: number, windowId: number, category: Category): Promise<void> {
-  const key = cacheKey(windowId, category.name)
-  return enqueue(key, () => doMove(tabId, windowId, category).catch(err => {
-    if (err instanceof Error && err.message.includes('Tab not found')) return
-    console.error('[Tabwise] moveTabToCategory failed:', err)
-  }))
+  return enqueue(String(windowId), () => doMove(tabId, windowId, category))
 }
 
 // Pre-register a group ID under a new category name before the browser group is renamed.

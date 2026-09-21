@@ -1,5 +1,7 @@
+import { localDateKey, localDayStart } from '../lib/dates'
+import { readScreenTime } from '../lib/screenTimeClient'
 import { Chart, registerables } from 'chart.js'
-import { getScreenTime, getTabRecords, getSettings, saveSettings, clearAllData, getQuotaBlock, clearQuotaBlock, isQuotaBlockedToday, getSiteMemoryHints, SiteMemoryHint } from '../lib/storage'
+import { getTabRecords, getSettings, saveSettings, clearAllData, getQuotaBlock, clearQuotaBlock, isQuotaBlockedToday, getSiteMemoryHints, SiteMemoryHint } from '../lib/storage'
 import { getProvider } from '../lib/ai'
 import { AIProviderName, Category } from '../types'
 
@@ -40,13 +42,10 @@ let weekChart: Chart | null = null
 let catChart: Chart | null = null
 
 function fmt(s: number): string {
+  s = Math.floor(s)
   if (s < 60) return `${s}s`
   if (s < 3600) return `${Math.floor(s / 60)}m`
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
-}
-
-function localDateKey(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function todayKey() { return localDateKey() }
@@ -120,7 +119,7 @@ if (VIEWS.includes(initialHash)) showView(initialHash)
 
 async function init() {
   const [screentime, records, settings] = await Promise.all([
-    getScreenTime(),
+    readScreenTime(),
     getTabRecords(),
     getSettings(),
   ])
@@ -140,7 +139,7 @@ async function init() {
   }
   const uniqueRecords = Array.from(domainMap.values())
 
-  const todayStart = new Date(todayKey()).getTime()
+  const todayStart = localDayStart()
   const organisedToday = records.filter(r => r.lastVisited >= todayStart).length
 
   el('ov-time').textContent = fmt(totalToday)
@@ -583,7 +582,7 @@ async function init() {
   })
 
   el('export-btn').addEventListener('click', async () => {
-    const st = await getScreenTime()
+    const st = await readScreenTime()
     const rows = ['Date,Domain,Seconds']
     for (const [date, sites] of Object.entries(st)) {
       for (const [domain, secs] of Object.entries(sites)) {
@@ -612,23 +611,14 @@ async function init() {
 init()
 
 async function refreshScreenTime() {
-  const [st] = await Promise.all([getScreenTime(), getSettings()])
+  const [st] = await Promise.all([readScreenTime(), getSettings()])
   const today = st[todayKey()] ?? {}
 
-  let liveAdd = 0
-  let liveDomain: string | null = null
-  try {
-    const active = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TIME' }) as
-      { domain: string | null; elapsed: number }
-    liveDomain = active.domain
-    liveAdd = active.elapsed
-  } catch { /* background not ready */ }
-
   function liveSeconds(domain: string): number {
-    return (today[domain] ?? 0) + (domain === liveDomain ? liveAdd : 0)
+    return today[domain] ?? 0
   }
 
-  const allDomains = new Set([...Object.keys(today), ...(liveDomain ? [liveDomain] : [])])
+  const allDomains = new Set(Object.keys(today))
   const totalToday = Array.from(allDomains).reduce((sum, d) => sum + liveSeconds(d), 0)
   const ovTime = document.getElementById('ov-time')
   if (ovTime) ovTime.textContent = fmt(totalToday)
