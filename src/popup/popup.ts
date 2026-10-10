@@ -136,17 +136,17 @@ async function init() {
           row.innerHTML = `
             <span class="group-dot" style="background:${cssColor(group.color)}"></span>
             <span class="group-name">${group.title ?? 'Untitled'}</span>
-            <button class="move-btn" data-title="${group.title}">→ New window</button>
+            <button class="move-btn" data-group-id="${group.id}">→ New window</button>
           `
           groupsList.appendChild(row)
         })
 
         groupsList.querySelectorAll<HTMLButtonElement>('.move-btn').forEach(btn => {
           btn.addEventListener('click', () => {
-            const title = btn.dataset.title ?? ''
+            const groupId = Number(btn.dataset.groupId)
             btn.textContent = 'Moving...'
             btn.disabled = true
-            chrome.runtime.sendMessage({ type: 'MOVE_GROUP_TO_WINDOW', groupTitle: title }, res => {
+            chrome.runtime.sendMessage({ type: 'MOVE_GROUP_TO_WINDOW', groupId, sourceWindowId: currentWindow.id }, res => {
               btn.textContent = res?.success ? 'Moved!' : 'Failed'
               setTimeout(() => { btn.textContent = '→ New window'; btn.disabled = false }, 2000)
             })

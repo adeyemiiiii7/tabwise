@@ -28,11 +28,19 @@ function enqueue(key: string, op: () => Promise<void>): Promise<void> {
   return next
 }
 
-async function tabExists(tabId: number): Promise<boolean> {
-  try { await chrome.tabs.get(tabId); return true } catch { return false }
+async function tabInWindow(tabId: number, windowId: number): Promise<chrome.tabs.Tab> {
+  const tab = await chrome.tabs.get(tabId)
+  if (tab.windowId !== windowId) throw new Error('Tab moved to another window; grouping cancelled')
+  return tab
 }
 
-function groupTab(tabId: number, groupId: number): Promise<number> {
+async function groupTab(tabId: number, groupId: number, windowId: number): Promise<number> {
+  // A queued categorization may finish after the user drags the tab or group.
+  const [tab, group] = await Promise.all([
+    tabInWindow(tabId, windowId),
+    chrome.tabGroups.get(groupId),
+  ])
+  if (group.windowId !== tab.windowId) throw new Error('Group moved to another window; grouping cancelled')
   return new Promise((resolve, reject) => {
     chrome.tabs.group({ tabIds: [tabId], groupId }, id => {
       if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message))
@@ -41,9 +49,11 @@ function groupTab(tabId: number, groupId: number): Promise<number> {
   })
 }
 
-function createGroup(tabId: number): Promise<number> {
+async function createGroup(tabId: number, windowId: number): Promise<number> {
+  await tabInWindow(tabId, windowId)
   return new Promise((resolve, reject) => {
-    chrome.tabs.group({ tabIds: [tabId] }, id => {
+    // The API defaults to the current window, NOT the tab's window.
+    chrome.tabs.group({ tabIds: [tabId], createProperties: { windowId } }, id => {
       if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message))
       else resolve(id)
     })
@@ -52,57 +62,40 @@ function createGroup(tabId: number): Promise<number> {
 
 async function doMove(tabId: number, windowId: number, category: Category): Promise<void> {
   if (isArc) return
-  if (!await tabExists(tabId)) return
-
+  const currentTab = await tabInWindow(tabId, windowId)
   const key = cacheKey(windowId, category.name)
+  const matches = (group: chrome.tabGroups.TabGroup) => group.windowId === windowId &&
+    (group.title === groupTitle(category) || group.title === category.name)
 
   // Guard against onCreated + onUpdated double-processing the same tab.
-  try {
-    const currentTab = await chrome.tabs.get(tabId)
-    if (currentTab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE) {
-      const currentGroup = await chrome.tabGroups.get(currentTab.groupId)
-      if (currentGroup.title === groupTitle(category) || currentGroup.title === category.name) {
-        groupCache.set(key, currentGroup.id) // keep cache warm
-        return
-      }
+  if (currentTab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE) {
+    const currentGroup = await chrome.tabGroups.get(currentTab.groupId).catch(() => null)
+    if (currentGroup && matches(currentGroup)) {
+      groupCache.set(key, currentGroup.id)
+      return
     }
-  } catch { /* tab or group gone — proceed normally */ }
+  }
 
   const cached = groupCache.get(key)
   if (cached !== undefined) {
-    try {
-      const group = await chrome.tabGroups.get(cached)
-      if (group.windowId !== windowId) throw new Error('Group moved to another window')
-      await groupTab(tabId, cached)
+    const group = await chrome.tabGroups.get(cached).catch(() => null)
+    if (group && matches(group)) {
+      await groupTab(tabId, cached, windowId)
       return
-    } catch {
-      groupCache.delete(key) // stale — fall through
     }
+    groupCache.delete(key)
   }
 
-  // 2. Query ALL groups (no windowId filter — more reliable across browser builds)
-  //    then match by title + windowId manually.
+  // Match by both title and window, including when two windows use the same category.
   const allGroups = await chrome.tabGroups.query({})
-  const expectedTitle = groupTitle(category)
-  const match = allGroups.find(g =>
-    g.windowId === windowId &&
-    (g.title === expectedTitle || g.title === category.name)
-  )
-
+  const match = allGroups.find(matches)
   if (match) {
-    try {
-      await groupTab(tabId, match.id)
-      groupCache.set(key, match.id)
-      return
-    } catch {
-      groupCache.delete(key)
-      // Group dissolved between query and add — fall through to create
-    }
+    await groupTab(tabId, match.id, windowId)
+    groupCache.set(key, match.id)
+    return
   }
 
-  if (!await tabExists(tabId)) return
-
-  const groupId = await createGroup(tabId)
+  const groupId = await createGroup(tabId, windowId)
   await chrome.tabGroups.update(groupId, {
     title: groupTitle(category),
     color: colorFromHex(category.color),
@@ -133,45 +126,43 @@ export function invalidateGroupCache(windowId?: number): void {
   }
 }
 
-export async function moveGroupToNewWindow(groupTitle: string, sourceWindowId: number): Promise<void> {
-  try {
-    const groups = await chrome.tabGroups.query({ windowId: sourceWindowId, title: groupTitle })
-    if (groups.length === 0) return
-
-    const groupId = groups[0].id
-    const groupColor = groups[0].color as TabGroupColor
+export function moveGroupToNewWindow(groupId: number, sourceWindowId: number): Promise<void> {
+  return enqueue(String(sourceWindowId), async () => {
+    const group = await chrome.tabGroups.get(groupId)
+    if (group.windowId !== sourceWindowId) throw new Error('Group has moved to another window')
     const tabs = await chrome.tabs.query({ windowId: sourceWindowId, groupId })
-    if (tabs.length === 0) return
-
     const tabIds = tabs.map(t => t.id).filter((id): id is number => id !== undefined)
-    if (tabIds.length === 0) return
+    if (tabIds.length === 0) throw new Error('Group has no tabs')
 
-    const newWindow = await chrome.windows.create({ tabId: tabIds[0], focused: false })
-    const newWindowId = newWindow?.id
-    if (!newWindowId) return
+    let newWindowId: number | undefined
+    try {
+      const newWindow = await chrome.windows.create({ tabId: tabIds[0], focused: false })
+      newWindowId = newWindow?.id
+      if (newWindowId === undefined) throw new Error('Could not create window')
 
-    if (tabIds.length > 1) {
-      await chrome.tabs.move(tabIds.slice(1) as [number, ...number[]], { windowId: newWindowId, index: -1 })
-    }
+      if (tabIds.length > 1) {
+        await chrome.tabs.move(tabIds.slice(1) as [number, ...number[]], { windowId: newWindowId, index: -1 })
+      }
 
-    const newTabs = await chrome.tabs.query({ windowId: newWindowId })
-    const newTabIds = newTabs.map(t => t.id).filter((id): id is number => id !== undefined)
-    if (newTabIds.length === 0) return
+      const newTabs = await chrome.tabs.query({ windowId: newWindowId })
+      const newTabIds = newTabs.filter(t => t.id !== undefined && tabIds.includes(t.id)).map(t => t.id!)
+      if (newTabIds.length === 0) throw new Error('Moved tabs no longer available')
 
-    const newGroupId = await new Promise<number>((resolve, reject) => {
-      chrome.tabs.group({ tabIds: newTabIds as [number, ...number[]] }, id => {
-        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message))
-        else resolve(id)
+      const newGroupId = await new Promise<number>((resolve, reject) => {
+        chrome.tabs.group({
+          tabIds: newTabIds as [number, ...number[]],
+          createProperties: { windowId: newWindowId },
+        }, id => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message))
+          else resolve(id)
+        })
       })
-    })
-    await chrome.tabGroups.update(newGroupId, { title: groupTitle, color: groupColor })
-
-    // Invalidate cache for both windows since group IDs changed
-    invalidateGroupCache(sourceWindowId)
-    invalidateGroupCache(newWindowId)
-  } catch {
-    // Window or tab disappeared — ignore
-  }
+      await chrome.tabGroups.update(newGroupId, { title: group.title, color: group.color })
+    } finally {
+      invalidateGroupCache(sourceWindowId)
+      if (newWindowId !== undefined) invalidateGroupCache(newWindowId)
+    }
+  })
 }
 
 export function colorFromHex(hex: string): TabGroupColor {

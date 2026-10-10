@@ -116,3 +116,24 @@ it('checkpoints through a browser alarm', async () => {
   await vi.advanceTimersByTimeAsync(0)
   expect(getActiveTime().elapsed).toBe(0)
 })
+
+it('counts only the focused tab while switching between two windows', async () => {
+  const firstTab = { ...tab, windowId: 1 }
+  const secondTab = { ...tab, id: 2, windowId: 2, url: 'https://example.com' }
+  browser.tabs.query.mockImplementation(async (...args: unknown[]) => {
+    const query = args[0] as { windowId: number }
+    return [query.windowId === 1 ? firstTab : secondTab]
+  })
+  const tracking = setupScreenTimeTracking()
+  await tracking.refresh()
+  vi.advanceTimersByTime(10_000)
+  win.id = 2
+  browser.windows.onFocusChanged.emit(2)
+  await vi.advanceTimersByTimeAsync(0)
+  vi.advanceTimersByTime(20_000)
+  win.id = 1
+  browser.windows.onFocusChanged.emit(1)
+  await vi.advanceTimersByTimeAsync(0)
+  vi.advanceTimersByTime(5_000)
+  expect((await tracking.snapshot())['2026-07-23']).toEqual({ 'github.com': 15, 'example.com': 20 })
+})

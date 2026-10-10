@@ -292,10 +292,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'MOVE_GROUP_TO_WINDOW') {
     ;(async () => {
       try {
-        const windows = await chrome.windows.getAll({ populate: false })
-        const focused = windows.find(w => w.focused) ?? windows[0]
-        if (!focused?.id) { sendResponse({ success: false }); return }
-        await moveGroupToNewWindow(message.groupTitle, focused.id)
+        if (!Number.isInteger(message.groupId) || !Number.isInteger(message.sourceWindowId)) {
+          sendResponse({ success: false }); return
+        }
+        await moveGroupToNewWindow(message.groupId, message.sourceWindowId)
         sendResponse({ success: true })
       } catch { sendResponse({ success: false }) }
     })()
